@@ -326,14 +326,23 @@ func actionRepos(ctx context.Context, scopeQuery string, includeUnsupported bool
 		return nil, err
 	}
 
+	hasTypeFile, err := regexp.MatchString(`type:file`, scopeQuery)
+	if err != nil {
+		return nil, err
+	}
+
 	if !hasCount {
 		scopeQuery = scopeQuery + " count:999999"
 	}
 
 	query := `
-query ActionRepos($query: String!) {
-	search(query: $query, version: V2) {
+query ActionRepos($query: String!, $after: String) {
+	search(query: $query, version: V2, first:1000, after:$after) {
 		results {
+			pageInfo {
+				hasNextPage
+				endCursor
+			}
 			results {
 				__typename
 				... on Repository {
@@ -379,6 +388,10 @@ fragment repositoryFields on Repository {
 		Data struct {
 			Search struct {
 				Results struct {
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   *string
+					}
 					Results []struct {
 						Typename           string `json:"__typename"`
 						ID, Name           string
@@ -402,73 +415,85 @@ fragment repositoryFields on Repository {
 		} `json:"errors,omitempty"`
 	}
 
-	if err := (&apiRequest{
-		query: query,
-		vars: map[string]interface{}{
-			"query": scopeQuery,
-		},
-		// Do not unpack errors and return error. Instead we want to go through
-		// the results and check whether they're complete.
-		// If we don't do this and the query returns an error for _one_
-		// repository because that is still cloning, we don't get any repositories.
-		// Instead we simply want to skip those repositories that are still
-		// being cloned.
-		dontUnpackErrors: true,
-		result:           &result,
-	}).do(); err != nil {
-
-		// Ignore exitCodeError with error == nil, because we explicitly set
-		// dontUnpackErrors, which can lead to an empty exitCodeErr being
-		// returned.
-		exitCodeErr, ok := err.(*exitCodeError)
-		if !ok {
-			return nil, err
-		}
-		if exitCodeErr.error != nil {
-			return nil, exitCodeErr
-		}
-	}
-
 	skipped := []string{}
 	unsupported := []string{}
 	reposByID := map[string]campaigns.ActionRepo{}
-	for _, searchResult := range result.Data.Search.Results.Results {
 
-		var repo Repository
-		if searchResult.Repository.ID != "" {
-			repo = searchResult.Repository
-		} else {
-			repo = Repository{
-				ID:                 searchResult.ID,
-				Name:               searchResult.Name,
-				ExternalRepository: searchResult.ExternalRepository,
-				DefaultBranch:      searchResult.DefaultBranch,
+	var previousEndCursor *string
+
+	for {
+		vars := map[string]interface{}{
+			"query": scopeQuery,
+		}
+		if previousEndCursor != nil {
+			vars["endCursor"] = *previousEndCursor
+		}
+		if err := (&apiRequest{
+			query: query,
+			vars:  vars,
+			// Do not unpack errors and return error. Instead we want to go through
+			// the results and check whether they're complete.
+			// If we don't do this and the query returns an error for _one_
+			// repository because that is still cloning, we don't get any repositories.
+			// Instead we simply want to skip those repositories that are still
+			// being cloned.
+			dontUnpackErrors: true,
+			result:           &result,
+		}).do(); err != nil {
+
+			// Ignore exitCodeError with error == nil, because we explicitly set
+			// dontUnpackErrors, which can lead to an empty exitCodeErr being
+			// returned.
+			exitCodeErr, ok := err.(*exitCodeError)
+			if !ok {
+				return nil, err
+			}
+			if exitCodeErr.error != nil {
+				return nil, exitCodeErr
 			}
 		}
+		previousEndCursor = result.Data.Search.Results.PageInfo.EndCursor
+		for _, searchResult := range result.Data.Search.Results.Results {
 
-		// Skip repos from unsupported code hosts but don't report them explicitly.
-		if !includeUnsupported && strings.ToLower(repo.ExternalRepository.ServiceType) != "github" && strings.ToLower(repo.ExternalRepository.ServiceType) != "bitbucketserver" {
-			unsupported = append(unsupported, repo.Name)
-			continue
-		}
-
-		if repo.DefaultBranch == nil || repo.DefaultBranch.Name == "" {
-			skipped = append(skipped, repo.Name)
-			continue
-		}
-
-		if repo.DefaultBranch.Target.OID == "" {
-			skipped = append(skipped, repo.Name)
-			continue
-		}
-
-		if _, ok := reposByID[repo.ID]; !ok {
-			reposByID[repo.ID] = campaigns.ActionRepo{
-				ID:      repo.ID,
-				Name:    repo.Name,
-				Rev:     repo.DefaultBranch.Target.OID,
-				BaseRef: repo.DefaultBranch.Name,
+			var repo Repository
+			if searchResult.Repository.ID != "" {
+				repo = searchResult.Repository
+			} else {
+				repo = Repository{
+					ID:                 searchResult.ID,
+					Name:               searchResult.Name,
+					ExternalRepository: searchResult.ExternalRepository,
+					DefaultBranch:      searchResult.DefaultBranch,
+				}
 			}
+
+			// Skip repos from unsupported code hosts but don't report them explicitly.
+			if !includeUnsupported && strings.ToLower(repo.ExternalRepository.ServiceType) != "github" && strings.ToLower(repo.ExternalRepository.ServiceType) != "bitbucketserver" {
+				unsupported = append(unsupported, repo.Name)
+				continue
+			}
+
+			if repo.DefaultBranch == nil || repo.DefaultBranch.Name == "" {
+				skipped = append(skipped, repo.Name)
+				continue
+			}
+
+			if repo.DefaultBranch.Target.OID == "" {
+				skipped = append(skipped, repo.Name)
+				continue
+			}
+
+			if _, ok := reposByID[repo.ID]; !ok {
+				reposByID[repo.ID] = campaigns.ActionRepo{
+					ID:      repo.ID,
+					Name:    repo.Name,
+					Rev:     repo.DefaultBranch.Target.OID,
+					BaseRef: repo.DefaultBranch.Name,
+				}
+			}
+		}
+		if !hasTypeFile || !result.Data.Search.Results.PageInfo.HasNextPage {
+			break
 		}
 	}
 

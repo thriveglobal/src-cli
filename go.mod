@@ -5,6 +5,7 @@ go 1.13
 require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/efritz/pentimento v0.0.0-20190429011147-ade47d831101
+	github.com/gobwas/glob v0.2.3
 	github.com/google/go-cmp v0.5.2
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jig/teereadcloser v0.0.0-20181016160506-953720c48e05

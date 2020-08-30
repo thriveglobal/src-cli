@@ -313,7 +313,7 @@ func createChangesetSpec(task *Task, diff string) *ChangesetSpec {
 			BaseRev:        task.Repository.Rev(),
 			HeadRepository: task.Repository.ID,
 			HeadRef:        "refs/heads/" + task.Template.Branch,
-			Title:          task.Template.Title,
+			Title:          task.Template.Title.Value(task.Repository),
 			Body:           task.Template.Body,
 			Commits: []GitCommitDescription{
 				{
@@ -323,7 +323,7 @@ func createChangesetSpec(task *Task, diff string) *ChangesetSpec {
 					Diff:        string(diff),
 				},
 			},
-			Published: task.Template.Published,
+			Published: task.Template.Published.IsRepoPublished(task.Repository),
 		},
 	}
 }

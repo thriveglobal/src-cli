@@ -1,10 +1,13 @@
 package campaigns
 
 import (
+	"encoding/json"
 	"fmt"
 
+	"github.com/gobwas/glob"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
+	"github.com/sourcegraph/src-cli/internal/campaigns/graphql"
 	"github.com/sourcegraph/src-cli/schema"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v2"
@@ -36,11 +39,11 @@ type CampaignSpec struct {
 }
 
 type ChangesetTemplate struct {
-	Title     string                       `json:"title,omitempty" yaml:"title"`
+	Title     OverridableString            `json:"title,omitempty" yaml:"title"`
 	Body      string                       `json:"body,omitempty" yaml:"body"`
 	Branch    string                       `json:"branch,omitempty" yaml:"branch"`
 	Commit    ExpandedGitCommitDescription `json:"commit,omitempty" yaml:"commit"`
-	Published bool                         `json:"published" yaml:"published"`
+	Published OverridableBool              `json:"published" yaml:"published"`
 }
 
 type GitCommitAuthor struct {
@@ -62,6 +65,153 @@ type OnQueryOrRepository struct {
 	RepositoriesMatchingQuery string `json:"repositoriesMatchingQuery,omitempty" yaml:"repositoriesMatchingQuery"`
 	Repository                string `json:"repository,omitempty" yaml:"repository"`
 	Branch                    string `json:"branch,omitempty" yaml:"branch"`
+}
+
+type OverridableBool struct {
+	Default *bool
+	OnlyExcept
+}
+
+type OnlyExcept struct {
+	Only   []string `json:"only,omitempty" yaml:"only"`
+	Except []string `json:"except,omitempty" yaml:"except"`
+
+	only   []glob.Glob
+	except []glob.Glob
+}
+
+func (p *OverridableBool) IsRepoPublished(repo *graphql.Repository) bool {
+	if p.Default != nil {
+		return *p.Default
+	}
+
+	if len(p.only) > 0 {
+		for _, g := range p.only {
+			if g.Match(repo.Name) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, g := range p.except {
+		if g.Match(repo.Name) {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *OverridableBool) MarshalJSON() ([]byte, error) {
+	if p.Default != nil {
+		return json.Marshal(*p.Default)
+	}
+
+	return json.Marshal(&p.OnlyExcept)
+}
+
+func (p *OverridableBool) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var def bool
+	if err := unmarshal(&def); err == nil {
+		p.Default = &def
+		return nil
+	}
+
+	p.Default = nil
+	if err := unmarshal(&p.OnlyExcept); err != nil {
+		return err
+	}
+
+	var err error
+	p.only, err = compilePatterns(p.Only)
+	if err != nil {
+		return err
+	}
+
+	p.except, err = compilePatterns(p.Except)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func compilePatterns(patterns []string) ([]glob.Glob, error) {
+	globs := make([]glob.Glob, len(patterns))
+	for i, pattern := range patterns {
+		g, err := glob.Compile(pattern)
+		if err != nil {
+			return nil, errors.Wrapf(err, "compiling repo pattern %q", pattern)
+		}
+
+		globs[i] = g
+	}
+
+	return globs, nil
+}
+
+type OverridableString struct {
+	Default string
+	Only    []*MatchValue
+}
+
+type MatchValue struct {
+	Match string `json:"match,omitempty" yaml:"match"`
+	Value string `json:"value,omitempty" yaml:"value"`
+
+	match glob.Glob
+}
+
+func (o *OverridableString) Value(repo *graphql.Repository) string {
+	for _, mv := range o.Only {
+		if mv.match.Match(repo.Name) {
+			return mv.Value
+		}
+	}
+
+	return o.Default
+}
+
+func (o *OverridableString) MarshalJSON() ([]byte, error) {
+	if len(o.Only) == 0 {
+		return json.Marshal(o.Default)
+	}
+
+	return json.Marshal(&struct {
+		Default string        `json:"default,omitempty"`
+		Only    []*MatchValue `json:"only,omitempty"`
+	}{
+		Default: o.Default,
+		Only:    o.Only,
+	})
+}
+
+func (o *OverridableString) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err == nil {
+		o.Default = s
+		o.Only = []*MatchValue{}
+		return nil
+	}
+
+	var temp struct {
+		Default string        `yaml:"default"`
+		Only    []*MatchValue `yaml:"only"`
+	}
+	if err := unmarshal(&temp); err != nil {
+		return err
+	}
+
+	o.Default = temp.Default
+	o.Only = temp.Only
+	for _, mv := range o.Only {
+		var err error
+		if mv.match, err = glob.Compile(mv.Match); err != nil {
+			return errors.Wrapf(err, "compiling repo pattern %q", mv.match)
+		}
+	}
+
+	return nil
 }
 
 type Step struct {

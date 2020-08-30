@@ -205,36 +205,34 @@ const CampaignSpecJSON = `{
               "description": "A single flag to control the publishing state for the entire campaign."
             },
             {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "description": "Only repositories that match patterns in this array will be published.",
-                  "additionalProperties": false,
-                  "required": ["only"],
-                  "properties": {
-                    "only": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "description": "Only repositories that do NOT match patterns in this array will be published.",
-                  "additionalProperties": false,
-                  "required": ["except"],
-                  "properties": {
-                    "except": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
+              "type": "object",
+              "title": "PublishedOnly",
+              "description": "Only repositories that match patterns in this array will be published.",
+              "additionalProperties": false,
+              "required": ["only"],
+              "properties": {
+                "only": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
                   }
                 }
-              ]
+              }
+            },
+            {
+              "type": "object",
+              "title": "PublishedExcept",
+              "description": "Only repositories that do NOT match patterns in this array will be published.",
+              "additionalProperties": false,
+              "required": ["except"],
+              "properties": {
+                "except": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           ]
         }

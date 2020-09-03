@@ -1,0 +1,17 @@
+name: proxy-buffer-size
+description: Decrease proxy buffer size to prevent DoS (denial of service) attacks.
+
+on:
+  - repositoriesMatchingQuery: proxy_buffer_size
+
+steps:
+  - run: grep -rl proxy_buffer_size . | xargs -n 1 sed -i 's/proxy_buffer_size\(\s*\)\d*k/proxy_buffer_size\14k/g'
+    container: alpine:3
+
+changesetTemplate:
+  title: Decrease proxy buffer size
+  body: Decrease proxy buffer size to prevent DoS (denial of service) attacks.
+  branch: decrease-proxy-buffer-size
+  commit:
+    message: Decrease proxy buffer size
+  published: false

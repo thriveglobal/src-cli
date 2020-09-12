@@ -3,12 +3,15 @@ module github.com/sourcegraph/src-cli
 go 1.13
 
 require (
+	github.com/coreos/go-semver v0.3.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/efritz/pentimento v0.0.0-20190429011147-ade47d831101
 	github.com/google/go-cmp v0.4.1
 	github.com/hashicorp/go-multierror v1.1.0
+	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/jig/teereadcloser v0.0.0-20181016160506-953720c48e05
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
+	github.com/manifoldco/promptui v0.7.0
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mattn/go-runewidth v0.0.9
 	github.com/neelance/parallel v0.0.0-20160708114440-4de9ce63d14c

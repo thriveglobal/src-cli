@@ -1,12 +1,12 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"net/url"
+
+	"github.com/sourcegraph/src-cli/internal/api"
+	"github.com/sourcegraph/src-cli/internal/version"
 )
 
 // buildTag is the git tag at the time of build and is used to
@@ -24,11 +24,18 @@ Examples:
 `
 
 	flagSet := flag.NewFlagSet("version", flag.ExitOnError)
+	var (
+		apiFlags = api.NewFlags(flagSet)
+	)
 
 	handler := func(args []string) error {
+		client := cfg.apiClient(apiFlags, flagSet.Output())
+
 		fmt.Printf("Current version: %s\n", buildTag)
 
-		recommendedVersion, err := getRecommendedVersion()
+		svc := version.VersionService{Client: client}
+
+		recommendedVersion, err := svc.GetRecommendedVersion(context.Background())
 		if err != nil {
 			return err
 		}
@@ -38,6 +45,35 @@ Examples:
 			return nil
 		}
 		fmt.Printf("Recommended Version: %s\n", recommendedVersion)
+		// validate := func(input string) error {
+		// 	_, err := url.ParseRequestURI(input)
+		// 	if err != nil {
+		// 		return errors.New("Invalid URL")
+		// 	}
+		// 	return nil
+		// }
+		// {
+		// 	prompt := promptui.Prompt{
+		// 		Label:    "Sourcegraph URL",
+		// 		Default:  "https://sourcegraph.com",
+		// 		Validate: validate,
+		// 	}
+
+		// 	_, err := prompt.Run()
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
+		// {
+		// 	prompt := promptui.Prompt{
+		// 		Label: "Access token",
+		// 	}
+
+		// 	_, err := prompt.Run()
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
 		return nil
 	}
 
@@ -51,47 +87,4 @@ Examples:
 			fmt.Println(usage)
 		},
 	})
-}
-
-func getRecommendedVersion() (string, error) {
-	url, err := url.Parse(cfg.Endpoint + "/.api/src-cli/version")
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequest("GET", url.String(), nil)
-	if err != nil {
-		return "", err
-	}
-	for k, v := range cfg.AdditionalHeaders {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusNotFound {
-			return "", nil
-		}
-
-		return "", fmt.Errorf("error: %s\n\n%s", resp.Status, body)
-	}
-
-	payload := struct {
-		Version string `json:"version"`
-	}{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return "", err
-	}
-
-	return payload.Version, nil
 }

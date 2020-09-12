@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+
+	"github.com/sourcegraph/src-cli/internal/api"
+	"github.com/sourcegraph/src-cli/internal/version"
 )
 
 var campaignsCommands commander
@@ -27,7 +31,15 @@ Use "src campaigns [command] -h" for more information about a command.
 `
 
 	flagSet := flag.NewFlagSet("campaigns", flag.ExitOnError)
+	var apiFlags = api.NewFlags(flagSet)
+
 	handler := func(args []string) error {
+		client := cfg.apiClient(apiFlags, flagSet.Output())
+		svc := version.VersionService{Client: client}
+		err := svc.MustNotBeOutdated(context.Background(), buildTag)
+		if err != nil {
+			return err
+		}
 		campaignsCommands.run(flagSet, "src campaigns", usage, args)
 		return nil
 	}

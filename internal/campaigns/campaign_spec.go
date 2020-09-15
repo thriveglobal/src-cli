@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/LawnGnome/campaign-schema/override"
+	"github.com/LawnGnome/campaign-schema/schema"
 	"github.com/gobwas/glob"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	"github.com/sourcegraph/src-cli/internal/campaigns/graphql"
-	"github.com/sourcegraph/src-cli/schema"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v2"
 )
@@ -39,20 +40,20 @@ type CampaignSpec struct {
 }
 
 type ChangesetTemplate struct {
-	Title     OverridableString            `json:"title,omitempty" yaml:"title"`
-	Body      string                       `json:"body,omitempty" yaml:"body"`
-	Branch    string                       `json:"branch,omitempty" yaml:"branch"`
+	Title     override.String              `json:"title,omitempty" yaml:"title"`
+	Body      override.String              `json:"body,omitempty" yaml:"body"`
+	Branch    override.String              `json:"branch,omitempty" yaml:"branch"`
 	Commit    ExpandedGitCommitDescription `json:"commit,omitempty" yaml:"commit"`
 	Published OverridableBool              `json:"published" yaml:"published"`
 }
 
 type GitCommitAuthor struct {
-	Name  string `json:"name" yaml:"name"`
-	Email string `json:"email" yaml:"email"`
+	Name  override.String `json:"name" yaml:"name"`
+	Email override.String `json:"email" yaml:"email"`
 }
 
 type ExpandedGitCommitDescription struct {
-	Message string           `json:"message,omitempty" yaml:"message"`
+	Message override.String  `json:"message,omitempty" yaml:"message"`
 	Author  *GitCommitAuthor `json:"author,omitempty" yaml:"author"`
 }
 
@@ -148,70 +149,6 @@ func compilePatterns(patterns []string) ([]glob.Glob, error) {
 	}
 
 	return globs, nil
-}
-
-type OverridableString struct {
-	Default string
-	Only    []*MatchValue
-}
-
-type MatchValue struct {
-	Match string `json:"match,omitempty" yaml:"match"`
-	Value string `json:"value,omitempty" yaml:"value"`
-
-	match glob.Glob
-}
-
-func (o *OverridableString) Value(repo *graphql.Repository) string {
-	for _, mv := range o.Only {
-		if mv.match.Match(repo.Name) {
-			return mv.Value
-		}
-	}
-
-	return o.Default
-}
-
-func (o *OverridableString) MarshalJSON() ([]byte, error) {
-	if len(o.Only) == 0 {
-		return json.Marshal(o.Default)
-	}
-
-	return json.Marshal(&struct {
-		Default string        `json:"default,omitempty"`
-		Only    []*MatchValue `json:"only,omitempty"`
-	}{
-		Default: o.Default,
-		Only:    o.Only,
-	})
-}
-
-func (o *OverridableString) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err == nil {
-		o.Default = s
-		o.Only = []*MatchValue{}
-		return nil
-	}
-
-	var temp struct {
-		Default string        `yaml:"default"`
-		Only    []*MatchValue `yaml:"only"`
-	}
-	if err := unmarshal(&temp); err != nil {
-		return err
-	}
-
-	o.Default = temp.Default
-	o.Only = temp.Only
-	for _, mv := range o.Only {
-		var err error
-		if mv.match, err = glob.Compile(mv.Match); err != nil {
-			return errors.Wrapf(err, "compiling repo pattern %q", mv.match)
-		}
-	}
-
-	return nil
 }
 
 type Step struct {

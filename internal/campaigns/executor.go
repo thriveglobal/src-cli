@@ -294,16 +294,17 @@ func reachedTimeout(cmdCtx context.Context, err error) bool {
 }
 
 func createChangesetSpec(task *Task, diff string) *ChangesetSpec {
+	repo := task.Repository.Name
+
 	var authorName string
 	var authorEmail string
-
 	if task.Template.Commit.Author == nil {
 		// user did not provide author info, so use defaults
 		authorName = "Sourcegraph"
 		authorEmail = "campaigns@sourcegraph.com"
 	} else {
-		authorName = task.Template.Commit.Author.Name
-		authorEmail = task.Template.Commit.Author.Email
+		authorName = task.Template.Commit.Author.Name.Value(repo)
+		authorEmail = task.Template.Commit.Author.Email.Value(repo)
 	}
 
 	return &ChangesetSpec{
@@ -312,12 +313,12 @@ func createChangesetSpec(task *Task, diff string) *ChangesetSpec {
 			BaseRef:        task.Repository.BaseRef(),
 			BaseRev:        task.Repository.Rev(),
 			HeadRepository: task.Repository.ID,
-			HeadRef:        "refs/heads/" + task.Template.Branch,
-			Title:          task.Template.Title.Value(task.Repository),
-			Body:           task.Template.Body,
+			HeadRef:        "refs/heads/" + task.Template.Branch.Value(repo),
+			Title:          task.Template.Title.Value(repo),
+			Body:           task.Template.Body.Value(repo),
 			Commits: []GitCommitDescription{
 				{
-					Message:     task.Template.Commit.Message,
+					Message:     task.Template.Commit.Message.Value(repo),
 					AuthorName:  authorName,
 					AuthorEmail: authorEmail,
 					Diff:        string(diff),

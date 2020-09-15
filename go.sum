@@ -1,3 +1,5 @@
+github.com/LawnGnome/campaign-schema v0.0.0-20200915044008-fb956c216a65 h1:3Hzx2CeDsf/hoAr3zEhRbG2IUnb3FaBojsTJMkWsz90=
+github.com/LawnGnome/campaign-schema v0.0.0-20200915044008-fb956c216a65/go.mod h1:PSeUirk5RYbWn64QnwEL0e4eo7fCiwQ3zqNV3PtGifE=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.0.0 h1:VSnTsYCnlFHaM2/igO1h6X3HA71jcobQuxemgkq4zYo=

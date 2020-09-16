@@ -1,15 +1,12 @@
 package campaigns
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/LawnGnome/campaign-schema/override"
 	"github.com/LawnGnome/campaign-schema/schema"
-	"github.com/gobwas/glob"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
-	"github.com/sourcegraph/src-cli/internal/campaigns/graphql"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v2"
 )
@@ -44,7 +41,7 @@ type ChangesetTemplate struct {
 	Body      override.String              `json:"body,omitempty" yaml:"body"`
 	Branch    override.String              `json:"branch,omitempty" yaml:"branch"`
 	Commit    ExpandedGitCommitDescription `json:"commit,omitempty" yaml:"commit"`
-	Published OverridableBool              `json:"published" yaml:"published"`
+	Published override.Bool                `json:"published" yaml:"published"`
 }
 
 type GitCommitAuthor struct {
@@ -66,89 +63,6 @@ type OnQueryOrRepository struct {
 	RepositoriesMatchingQuery string `json:"repositoriesMatchingQuery,omitempty" yaml:"repositoriesMatchingQuery"`
 	Repository                string `json:"repository,omitempty" yaml:"repository"`
 	Branch                    string `json:"branch,omitempty" yaml:"branch"`
-}
-
-type OverridableBool struct {
-	Default *bool
-	OnlyExcept
-}
-
-type OnlyExcept struct {
-	Only   []string `json:"only,omitempty" yaml:"only"`
-	Except []string `json:"except,omitempty" yaml:"except"`
-
-	only   []glob.Glob
-	except []glob.Glob
-}
-
-func (p *OverridableBool) IsRepoPublished(repo *graphql.Repository) bool {
-	if p.Default != nil {
-		return *p.Default
-	}
-
-	if len(p.only) > 0 {
-		for _, g := range p.only {
-			if g.Match(repo.Name) {
-				return true
-			}
-		}
-		return false
-	}
-
-	for _, g := range p.except {
-		if g.Match(repo.Name) {
-			return false
-		}
-	}
-	return true
-}
-
-func (p *OverridableBool) MarshalJSON() ([]byte, error) {
-	if p.Default != nil {
-		return json.Marshal(*p.Default)
-	}
-
-	return json.Marshal(&p.OnlyExcept)
-}
-
-func (p *OverridableBool) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var def bool
-	if err := unmarshal(&def); err == nil {
-		p.Default = &def
-		return nil
-	}
-
-	p.Default = nil
-	if err := unmarshal(&p.OnlyExcept); err != nil {
-		return err
-	}
-
-	var err error
-	p.only, err = compilePatterns(p.Only)
-	if err != nil {
-		return err
-	}
-
-	p.except, err = compilePatterns(p.Except)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func compilePatterns(patterns []string) ([]glob.Glob, error) {
-	globs := make([]glob.Glob, len(patterns))
-	for i, pattern := range patterns {
-		g, err := glob.Compile(pattern)
-		if err != nil {
-			return nil, errors.Wrapf(err, "compiling repo pattern %q", pattern)
-		}
-
-		globs[i] = g
-	}
-
-	return globs, nil
 }
 
 type Step struct {

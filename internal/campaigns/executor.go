@@ -324,7 +324,7 @@ func createChangesetSpec(task *Task, diff string) *ChangesetSpec {
 					Diff:        string(diff),
 				},
 			},
-			Published: task.Template.Published.IsRepoPublished(task.Repository),
+			Published: task.Template.Published.Is(repo),
 		},
 	}
 }

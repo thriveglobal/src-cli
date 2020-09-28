@@ -3,7 +3,7 @@ module github.com/sourcegraph/src-cli
 go 1.13
 
 require (
-	github.com/LawnGnome/campaign-schema v0.0.0-20200916015213-5502c5c9bd7c
+	github.com/LawnGnome/campaign-schema v0.0.0-20200928031255-19467a6b7b49
 	github.com/dustin/go-humanize v1.0.0
 	github.com/efritz/pentimento v0.0.0-20190429011147-ade47d831101
 	github.com/google/go-cmp v0.5.2

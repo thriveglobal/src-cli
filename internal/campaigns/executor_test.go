@@ -67,10 +67,7 @@ func TestExecutor_Integration(t *testing.T) {
 		Timeout:     5 * time.Second,
 	}
 
-	called := false
-	updateFn := func(task *Task, ts TaskStatus) { called = true }
-
-	executor := newExecutor(opts, client, updateFn)
+	executor := newExecutor(opts, client)
 
 	template := &ChangesetTemplate{}
 	executor.AddTask(repo, steps, template)
@@ -79,10 +76,6 @@ func TestExecutor_Integration(t *testing.T) {
 	specs, err := executor.Wait()
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if !called {
-		t.Fatalf("update was not called")
 	}
 
 	if have, want := len(specs), 1; have != want {

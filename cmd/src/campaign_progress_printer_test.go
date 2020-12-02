@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -37,10 +36,6 @@ index 627c2ae..88f1836 100644
 `
 
 func TestCampaignProgressPrinterIntegration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Something emits different escape codes on windows.")
-	}
-
 	buf := &ttyBuf{}
 
 	out := output.NewOutput(buf, output.OutputOpts{

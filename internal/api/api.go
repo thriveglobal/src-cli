@@ -17,6 +17,7 @@ import (
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 	"github.com/sourcegraph/codeintelutils"
 )
 
@@ -95,7 +96,7 @@ func NewClient(opts ClientOpts) Client {
 
 	flags := opts.Flags
 	if flags == nil {
-		flags = defaultFlags()
+		flags = DefaultFlags()
 	}
 
 	return &client{
@@ -140,6 +141,8 @@ func (c *client) NewHTTPRequest(ctx context.Context, method, p string, body io.R
 		return nil, err
 	}
 
+	log.Debug().Str("method", method).Str("path", p).Msg("creating raw HTTP request")
+
 	return req, nil
 }
 
@@ -151,7 +154,7 @@ func (c *client) createHTTPRequest(ctx context.Context, method, p string, body i
 	if c.opts.AccessToken != "" {
 		req.Header.Set("Authorization", "token "+c.opts.AccessToken)
 	}
-	if *c.opts.Flags.trace {
+	if *c.opts.Flags.Trace {
 		req.Header.Set("X-Sourcegraph-Should-Trace", "true")
 	}
 	for k, v := range c.opts.AdditionalHeaders {
@@ -162,99 +165,111 @@ func (c *client) createHTTPRequest(ctx context.Context, method, p string, body i
 }
 
 func (r *request) do(ctx context.Context, result interface{}) (bool, error) {
-	if *r.client.opts.Flags.getCurl {
-		curl, err := r.curlCmd()
-		if err != nil {
-			return false, err
-		}
-		r.client.opts.Out.Write([]byte(curl + "\n"))
-		return false, nil
-	}
-
-	if *r.client.opts.Flags.dump {
-		fmt.Fprintf(r.client.opts.Out, "<-- query:\n%s\n\n", r.query)
-		if len(r.vars) > 0 {
-			fmt.Fprintln(r.client.opts.Out, "<-- variables:")
-			for k, v := range r.vars {
-				value, err := json.Marshal(v)
-				if err != nil {
-					return false, err
-				}
-				fmt.Fprintf(r.client.opts.Out, "    %s: %s\n", k, string(value))
+	ok, err := func() (bool, error) {
+		if *r.client.opts.Flags.GetCurl {
+			curl, err := r.curlCmd()
+			if err != nil {
+				return false, err
 			}
-			fmt.Fprintln(r.client.opts.Out, "")
+			r.client.opts.Out.Write([]byte(curl + "\n"))
+			//return false, nil
 		}
-	}
 
-	// Create the JSON object.
-	reqBody, err := json.Marshal(map[string]interface{}{
-		"query":     r.query,
-		"variables": r.vars,
-	})
-	if err != nil {
-		return false, err
-	}
-
-	var bufBody io.Reader = bytes.NewBuffer(reqBody)
-	if r.gzip {
-		bufBody = codeintelutils.Gzip(bufBody)
-	}
-
-	// Create the HTTP request.
-	req, err := r.client.NewHTTPRequest(ctx, "POST", ".api/graphql", bufBody)
-	if err != nil {
-		return false, err
-	}
-
-	if r.gzip {
-		req.Header.Set("Content-Encoding", "gzip")
-	}
-
-	// Perform the request.
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	// Check trace header before we potentially early exit
-	if *r.client.opts.Flags.trace {
-		r.client.opts.Out.Write([]byte(fmt.Sprintf("x-trace: %s\n", resp.Header.Get("x-trace"))))
-	}
-
-	// Our request may have failed before reaching the GraphQL endpoint, so
-	// confirm the status code. You can test this easily with e.g. an invalid
-	// endpoint like -endpoint=https://google.com
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized && isatty.IsCygwinTerminal(os.Stdout.Fd()) {
-			fmt.Println("You may need to specify or update your access token to use this endpoint.")
-			fmt.Println("See https://github.com/sourcegraph/src-cli#readme")
-			fmt.Println("")
+		if *r.client.opts.Flags.Dump {
+			fmt.Fprintf(r.client.opts.Out, "<-- query:\n%s\n\n", r.query)
+			if len(r.vars) > 0 {
+				fmt.Fprintln(r.client.opts.Out, "<-- variables:")
+				for k, v := range r.vars {
+					value, err := json.Marshal(v)
+					if err != nil {
+						return false, err
+					}
+					fmt.Fprintf(r.client.opts.Out, "    %s: %s\n", k, string(value))
+				}
+				fmt.Fprintln(r.client.opts.Out, "")
+			}
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+
+		// Create the JSON object.
+		reqBody, err := json.Marshal(map[string]interface{}{
+			"query":     r.query,
+			"variables": r.vars,
+		})
 		if err != nil {
 			return false, err
 		}
-		return false, fmt.Errorf("error: %s\n\n%s", resp.Status, body)
+
+		log.Debug().RawJSON("request", reqBody).Msg("sending GraphQL request")
+
+		var bufBody io.Reader = bytes.NewBuffer(reqBody)
+		if r.gzip {
+			bufBody = codeintelutils.Gzip(bufBody)
+		}
+
+		// Create the HTTP request.
+		req, err := r.client.NewHTTPRequest(ctx, "POST", ".api/graphql", bufBody)
+		if err != nil {
+			return false, err
+		}
+
+		if r.gzip {
+			req.Header.Set("Content-Encoding", "gzip")
+		}
+
+		// Perform the request.
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false, err
+		}
+		defer resp.Body.Close()
+
+		// Check trace header before we potentially early exit
+		if *r.client.opts.Flags.Trace {
+			r.client.opts.Out.Write([]byte(fmt.Sprintf("x-trace: %s\n", resp.Header.Get("x-trace"))))
+			log.Debug().Str("x-trace", resp.Header.Get("x-trace")).Msg("trace")
+		}
+
+		// Our request may have failed before reaching the GraphQL endpoint, so
+		// confirm the status code. You can test this easily with e.g. an invalid
+		// endpoint like -endpoint=https://google.com
+		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusUnauthorized && isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+				fmt.Println("You may need to specify or update your access token to use this endpoint.")
+				fmt.Println("See https://github.com/sourcegraph/src-cli#readme")
+				fmt.Println("")
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return false, err
+			}
+			return false, fmt.Errorf("error: %s\n\n%s", resp.Status, body)
+		}
+
+		body := resp.Body
+		if *r.client.opts.Flags.Dump {
+			var buf bytes.Buffer
+			body = ioaux.TeeReadCloser(resp.Body, &buf)
+			defer func() {
+				var out bytes.Buffer
+				json.Indent(&out, buf.Bytes(), "    ", "    ")
+				fmt.Fprintf(r.client.opts.Out, "--> %s\n\n", out.String())
+			}()
+		}
+
+		// Decode the response.
+		if err := json.NewDecoder(body).Decode(result); err != nil {
+			return false, err
+		}
+
+		log.Debug().Interface("response", result).Msg("received response")
+
+		return true, nil
+	}()
+	if err != nil {
+		log.Error().Err(err).Msg("request error")
 	}
 
-	body := resp.Body
-	if *r.client.opts.Flags.dump {
-		var buf bytes.Buffer
-		body = ioaux.TeeReadCloser(resp.Body, &buf)
-		defer func() {
-			var out bytes.Buffer
-			json.Indent(&out, buf.Bytes(), "    ", "    ")
-			fmt.Fprintf(r.client.opts.Out, "--> %s\n\n", out.String())
-		}()
-	}
-
-	// Decode the response.
-	if err := json.NewDecoder(body).Decode(result); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return ok, err
 }
 
 func (r *request) Do(ctx context.Context, result interface{}) (bool, error) {

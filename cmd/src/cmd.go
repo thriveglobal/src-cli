@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,7 +19,7 @@ type command struct {
 	aliases []string
 
 	// handler is the function that is invoked to handle this command.
-	handler func(args []string) error
+	handler func(ctx context.Context, args []string) error
 
 	// flagSet.Usage function to invoke on e.g. -h flag. If nil, a default one
 	// one is used.

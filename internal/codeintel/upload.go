@@ -21,5 +21,5 @@ func UploadIndex(opts UploadIndexOpts) (string, error) {
 // uploadIndex constructs a GraphQL-compatible identifier from the raw identifier returned
 // from the upload endpoint.
 func uploadIDToGraphQLID(uploadID int) string {
-	return string(base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf(`LSIFUpload:"%d"`, uploadID))))
+	return string(base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf(`LSIFUpload:%d`, uploadID))))
 }

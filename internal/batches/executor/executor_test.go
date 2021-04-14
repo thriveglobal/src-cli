@@ -401,7 +401,7 @@ output4=integration-test-batch-change`,
 			defer os.Remove(testTempDir)
 
 			cache := newInMemoryExecutionCache()
-			creator := workspace.NewWorkspaceCreator(context.Background(), "bind", testTempDir, testTempDir, []batches.Step{})
+			creator := workspace.NewCreator(context.Background(), "bind", testTempDir, testTempDir, []batches.Step{})
 			opts := Opts{
 				Creator:     creator,
 				TempDir:     testTempDir,

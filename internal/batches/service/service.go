@@ -162,8 +162,8 @@ func (svc *Service) NewRepoFetcher(dir string, cleanArchives bool) batches.RepoF
 }
 
 // TODO(mrnugget): This can be removed
-func (svc *Service) NewWorkspaceCreator(ctx context.Context, cacheDir, tempDir string, steps []batches.Step) workspace.WorkspaceCreator {
-	return workspace.NewWorkspaceCreator(ctx, svc.workspace, cacheDir, tempDir, steps)
+func (svc *Service) NewWorkspaceCreator(ctx context.Context, cacheDir, tempDir string, steps []batches.Step) workspace.Creator {
+	return workspace.NewCreator(ctx, svc.workspace, cacheDir, tempDir, steps)
 }
 
 // SetDockerImages updates the steps within the batch spec to include the exact

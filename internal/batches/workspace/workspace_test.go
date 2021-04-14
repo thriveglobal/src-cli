@@ -26,41 +26,41 @@ func TestBestWorkspaceCreator(t *testing.T) {
 	}
 	for name, tc := range map[string]struct {
 		images []docker.Image
-		want   WorkspaceCreatorType
+		want   CreatorType
 	}{
 		"nil steps": {
 			images: nil,
-			want:   WorkspaceCreatorVolume,
+			want:   CreatorVolume,
 		},
 		"no steps": {
 			images: []docker.Image{},
-			want:   WorkspaceCreatorVolume,
+			want:   CreatorVolume,
 		},
 		"root": {
 			images: []docker.Image{
 				&mock.Image{UidGid: uidGid(0, 0)},
 			},
-			want: WorkspaceCreatorVolume,
+			want: CreatorVolume,
 		},
 		"same user": {
 			images: []docker.Image{
 				&mock.Image{UidGid: uidGid(1000, 1000)},
 				&mock.Image{UidGid: uidGid(1000, 1000)},
 			},
-			want: WorkspaceCreatorVolume,
+			want: CreatorVolume,
 		},
 		"different user": {
 			images: []docker.Image{
 				&mock.Image{UidGid: uidGid(1000, 1000)},
 				&mock.Image{UidGid: uidGid(0, 0)},
 			},
-			want: WorkspaceCreatorBind,
+			want: CreatorBind,
 		},
 		"id error": {
 			images: []docker.Image{
 				&mock.Image{UidGidErr: errors.New("foo")},
 			},
-			want: WorkspaceCreatorBind,
+			want: CreatorBind,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -75,11 +75,11 @@ func TestBestWorkspaceCreator(t *testing.T) {
 			if isOverridden {
 				// This is an overridden platform, so the workspace type will
 				// always be bind from bestWorkspaceCreator().
-				if have, want := BestWorkspaceCreator(ctx, steps), WorkspaceCreatorBind; have != want {
+				if have, want := BestCreatorType(ctx, steps), CreatorBind; have != want {
 					t.Errorf("unexpected creator type on overridden platform: have=%d want=%d", have, want)
 				}
 			} else {
-				if have := BestWorkspaceCreator(ctx, steps); have != tc.want {
+				if have := BestCreatorType(ctx, steps); have != tc.want {
 					t.Errorf("unexpected creator type on non-overridden platform: have=%d want=%d", have, tc.want)
 				}
 			}
@@ -87,7 +87,7 @@ func TestBestWorkspaceCreator(t *testing.T) {
 			// Regardless of what bestWorkspaceCreator() would have done, let's
 			// test that the right thing happens regardless if detection were to
 			// actually occur.
-			have := detectBestWorkspaceCreator(ctx, steps)
+			have := detectBestCreatorType(ctx, steps)
 			if have != tc.want {
 				t.Errorf("unexpected creator type: have=%d want=%d", have, tc.want)
 			}

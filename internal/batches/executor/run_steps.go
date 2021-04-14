@@ -42,7 +42,7 @@ type executionResult struct {
 type executionOpts struct {
 	archive batches.RepoZip
 
-	wc   workspace.WorkspaceCreator
+	wc   workspace.Creator
 	path string
 
 	batchChangeAttributes *BatchChangeAttributes

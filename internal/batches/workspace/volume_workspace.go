@@ -23,7 +23,7 @@ import (
 
 type dockerVolumeWorkspaceCreator struct{ tempDir string }
 
-var _ WorkspaceCreator = &dockerVolumeWorkspaceCreator{}
+var _ Creator = &dockerVolumeWorkspaceCreator{}
 
 func (wc *dockerVolumeWorkspaceCreator) Create(ctx context.Context, repo *graphql.Repository, steps []batches.Step, archive batches.RepoZip) (Workspace, error) {
 	volume, err := wc.createVolume(ctx)

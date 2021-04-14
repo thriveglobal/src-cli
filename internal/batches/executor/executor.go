@@ -169,7 +169,7 @@ type Opts struct {
 	CacheDir   string
 	ClearCache bool
 
-	Creator     workspace.WorkspaceCreator
+	Creator     workspace.Creator
 	Parallelism int
 	Timeout     time.Duration
 
@@ -185,7 +185,7 @@ type executor struct {
 
 	client  api.Client
 	logger  *log.Manager
-	creator workspace.WorkspaceCreator
+	creator workspace.Creator
 
 	tasks      []*Task
 	statuses   map[*Task]*TaskStatus

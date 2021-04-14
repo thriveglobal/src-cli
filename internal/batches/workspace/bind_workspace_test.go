@@ -84,7 +84,7 @@ func TestDockerBindWorkspaceCreator_Create(t *testing.T) {
 		testTempDir := workspaceTmpDir(t)
 
 		archive := &fakeRepoArchive{mockPath: archivePath}
-		creator := &DockerBindWorkspaceCreator{Dir: testTempDir}
+		creator := &dockerBindWorkspaceCreator{Dir: testTempDir}
 		workspace, err := creator.Create(context.Background(), repo, nil, archive)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
@@ -114,7 +114,7 @@ func TestDockerBindWorkspaceCreator_Create(t *testing.T) {
 
 		badArchive := &fakeRepoArchive{mockPath: badZipFile}
 
-		creator := &DockerBindWorkspaceCreator{Dir: testTempDir}
+		creator := &dockerBindWorkspaceCreator{Dir: testTempDir}
 		if _, err := creator.Create(context.Background(), repo, nil, badArchive); err == nil {
 			t.Error("unexpected nil error")
 		}
@@ -128,7 +128,7 @@ func TestDockerBindWorkspaceCreator_Create(t *testing.T) {
 			mockAdditionalFilePaths: additionalFilePaths,
 		}
 
-		creator := &DockerBindWorkspaceCreator{Dir: testTempDir}
+		creator := &dockerBindWorkspaceCreator{Dir: testTempDir}
 		workspace, err := creator.Create(context.Background(), repo, nil, archive)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)

@@ -1,4 +1,4 @@
-package batches
+package workspace
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/sourcegraph/src-cli/internal/batches"
 	"github.com/sourcegraph/src-cli/internal/batches/docker"
 	"github.com/sourcegraph/src-cli/internal/batches/mock"
 	"github.com/sourcegraph/src-cli/internal/exec/expect"
@@ -63,11 +64,11 @@ func TestBestWorkspaceCreator(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			var steps []Step
+			var steps []batches.Step
 			if tc.images != nil {
-				steps = make([]Step, len(tc.images))
+				steps = make([]batches.Step, len(tc.images))
 				for i, image := range tc.images {
-					steps[i].image = image
+					steps[i].SetImage(image)
 				}
 			}
 

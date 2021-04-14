@@ -1,9 +1,10 @@
-package batches
+package workspace
 
 import (
 	"context"
 	"runtime"
 
+	"github.com/sourcegraph/src-cli/internal/batches"
 	"github.com/sourcegraph/src-cli/internal/batches/git"
 	"github.com/sourcegraph/src-cli/internal/batches/graphql"
 )
@@ -13,7 +14,7 @@ import (
 // responsible for ultimately generating a diff.
 type WorkspaceCreator interface {
 	// Create creates a new workspace for the given repository and archive file.
-	Create(ctx context.Context, repo *graphql.Repository, steps []Step, archive RepoZip) (Workspace, error)
+	Create(ctx context.Context, repo *graphql.Repository, steps []batches.Step, archive batches.RepoZip) (Workspace, error)
 }
 
 // Workspace implementations manage per-changeset storage when executing batch
@@ -50,7 +51,7 @@ const (
 	WorkspaceCreatorVolume
 )
 
-func NewWorkspaceCreator(ctx context.Context, preference, cacheDir, tempDir string, steps []Step) WorkspaceCreator {
+func NewWorkspaceCreator(ctx context.Context, preference, cacheDir, tempDir string, steps []batches.Step) WorkspaceCreator {
 	var workspaceType WorkspaceCreatorType
 	if preference == "volume" {
 		workspaceType = WorkspaceCreatorVolume
@@ -68,7 +69,7 @@ func NewWorkspaceCreator(ctx context.Context, preference, cacheDir, tempDir stri
 
 // BestWorkspaceCreator determines the correct workspace creator to use based on
 // the environment and batch change to be executed.
-func BestWorkspaceCreator(ctx context.Context, steps []Step) WorkspaceCreatorType {
+func BestWorkspaceCreator(ctx context.Context, steps []batches.Step) WorkspaceCreatorType {
 	// The basic theory here is that we have two options: bind and volume. Bind
 	// is battle tested and always safe, but can be slow on non-Linux platforms
 	// because bind mounts are slow. Volume is faster on those platforms, but
@@ -86,7 +87,7 @@ func BestWorkspaceCreator(ctx context.Context, steps []Step) WorkspaceCreatorTyp
 	return detectBestWorkspaceCreator(ctx, steps)
 }
 
-func detectBestWorkspaceCreator(ctx context.Context, steps []Step) WorkspaceCreatorType {
+func detectBestWorkspaceCreator(ctx context.Context, steps []batches.Step) WorkspaceCreatorType {
 	// OK, so we're interested in volume mode, but we need to take its
 	// shortcomings around mixed user environments into account.
 	//
@@ -106,7 +107,7 @@ func detectBestWorkspaceCreator(ctx context.Context, steps []Step) WorkspaceCrea
 	var uid *int
 
 	for _, step := range steps {
-		ug, err := step.image.UIDGID(ctx)
+		ug, err := step.ImageUIDGID(ctx)
 		if err != nil {
 			// An error here likely indicates that `id` isn't available on the
 			// path. That's OK: let's not make any assumptions at this point

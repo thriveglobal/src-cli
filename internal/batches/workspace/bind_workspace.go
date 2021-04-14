@@ -1,4 +1,4 @@
-package batches
+package workspace
 
 import (
 	"archive/zip"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
+	"github.com/sourcegraph/src-cli/internal/batches"
 	"github.com/sourcegraph/src-cli/internal/batches/git"
 	"github.com/sourcegraph/src-cli/internal/batches/graphql"
 )
@@ -24,7 +25,7 @@ type DockerBindWorkspaceCreator struct {
 
 var _ WorkspaceCreator = &DockerBindWorkspaceCreator{}
 
-func (wc *DockerBindWorkspaceCreator) Create(ctx context.Context, repo *graphql.Repository, steps []Step, archive RepoZip) (Workspace, error) {
+func (wc *DockerBindWorkspaceCreator) Create(ctx context.Context, repo *graphql.Repository, steps []batches.Step, archive batches.RepoZip) (Workspace, error) {
 	w, err := wc.unzipToWorkspace(ctx, repo, archive.Path())
 	if err != nil {
 		return nil, errors.Wrap(err, "unzipping the repository")

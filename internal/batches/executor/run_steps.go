@@ -9,8 +9,14 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
@@ -215,62 +221,157 @@ func runSteps(ctx context.Context, opts *executionOpts) (result executionResult,
 
 		opts.reportProgress(runScript.String())
 		const workDir = "/work"
-		workspaceOpts, err := workspace.DockerRunOpts(ctx, workDir)
-		if err != nil {
-			return execResult, errors.Wrap(err, "getting Docker options for workspace")
-		}
+		// workspaceOpts, err := workspace.DockerRunOpts(ctx, workDir)
+		// if err != nil {
+		// 	return execResult, errors.Wrap(err, "getting Docker options for workspace")
+		// }
 
 		// Where should we execute the steps.run script?
-		scriptWorkDir := workDir
-		if opts.path != "" {
-			scriptWorkDir = workDir + "/" + opts.path
-		}
+		// scriptWorkDir := workDir
+		// if opts.path != "" {
+		// 	scriptWorkDir = workDir + "/" + opts.path
+		// }
 
-		args := append([]string{
-			"run",
-			"--rm",
-			"--init",
-			"--cidfile", cidFile.Name(),
-			"--workdir", scriptWorkDir,
-			"--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", runScriptFile.Name(), containerTemp),
-		}, workspaceOpts...)
-		for target, source := range filesToMount {
-			args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", source.Name(), target))
+		name := fmt.Sprintf("%s-%d-a", strings.ToLower(strings.ReplaceAll(opts.repo.ID, "=", "")), i)
+
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+			Spec: v1.PodSpec{
+				RestartPolicy: v1.RestartPolicyNever,
+				Containers: []v1.Container{
+					{
+						Name:       "step-run",
+						Image:      digest,
+						WorkingDir: workDir,
+						Command:    []string{shell},
+						Args:       []string{"-c", `printf "\n(c) Copyright Sourcegraph 2013-2020." | tee -a $(find -name README.md)`}, //filepath.Join(filepath.Dir(runScriptFile.Name()), filepath.Base(runScriptFile.Name()))}, // []string{filepath.Join(filepath.Dir(containerTemp), filepath.Base(runScriptFile.Name()))},
+						VolumeMounts: []v1.VolumeMount{
+							{Name: "script-file", MountPath: filepath.Dir(runScriptFile.Name())},
+							{Name: "work-dir", MountPath: "/work"},
+						},
+					},
+				},
+				Volumes: []v1.Volume{{
+					Name: "script-file",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{Path: filepath.Dir(runScriptFile.Name())},
+					},
+				}, {
+					Name: "work-dir",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{Path: *workspace.WorkDir()},
+					},
+				}},
+			},
 		}
 
 		for k, v := range env {
-			args = append(args, "-e", k+"="+v)
+			pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, v1.EnvVar{Name: k, Value: v})
 		}
 
-		args = append(args, "--entrypoint", shell)
-
-		cmd := exec.CommandContext(ctx, "docker", args...)
-		cmd.Args = append(cmd.Args, "--", digest, containerTemp)
-		if dir := workspace.WorkDir(); dir != nil {
-			cmd.Dir = *dir
+		// use the current context in kubeconfig
+		config, err := clientcmd.BuildConfigFromFlags("", filepath.Join(os.Getenv("HOME"), ".kube", "config"))
+		if err != nil {
+			panic(err.Error())
 		}
 
-		var stdoutBuffer, stderrBuffer bytes.Buffer
-		cmd.Stdout = io.MultiWriter(&stdoutBuffer, opts.logger.PrefixWriter("stdout"))
-		cmd.Stderr = io.MultiWriter(&stderrBuffer, opts.logger.PrefixWriter("stderr"))
+		// create the clientset
+		clientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
+		}
 
-		opts.logger.Logf("[Step %d] run: %q, container: %q", i+1, step.Run, step.Container)
-		opts.logger.Logf("[Step %d] full command: %q", i+1, strings.Join(cmd.Args, " "))
+		if pod, _ := clientset.CoreV1().Pods("default").Get(ctx, pod.Name, metav1.GetOptions{}); err == nil {
+			// Try to delete the pod if it still exists.
+			clientset.CoreV1().Pods("default").Delete(ctx, pod.Name, metav1.DeleteOptions{})
+		}
+
+		pod, err = clientset.CoreV1().Pods("default").Create(ctx, pod, metav1.CreateOptions{})
+		if err != nil {
+			panic(err.Error())
+		}
+		defer func() {
+			clientset.CoreV1().Pods("default").Delete(ctx, pod.Name, metav1.DeleteOptions{})
+		}()
+
+		watchResult, err := clientset.CoreV1().Pods("default").Watch(ctx, metav1.SingleObject(pod.ObjectMeta))
+		if err != nil {
+			panic(err.Error())
+		}
+
+		if err := func() error {
+			for {
+				select {
+				case events, ok := <-watchResult.ResultChan():
+					if !ok {
+						return nil
+					}
+					resp, ok := events.Object.(*v1.Pod)
+					if !ok {
+						continue
+					}
+					if resp.Status.Phase == v1.PodSucceeded {
+						watchResult.Stop()
+					} else if resp.Status.Phase == v1.PodFailed {
+						watchResult.Stop()
+						return fmt.Errorf("pod died reason=%q %+#v", resp.Status.Reason, resp.Status)
+					}
+				case <-time.After(100 * time.Second):
+					fmt.Println("timeout to wait for pod active")
+					watchResult.Stop()
+				}
+			}
+		}(); err != nil {
+			panic(err.Error())
+		}
+
+		// args := append([]string{
+		// 	"run",
+		// 	"--rm",
+		// 	"--init",
+		// 	"--cidfile", cidFile.Name(),
+		// 	"--workdir", scriptWorkDir,
+		// 	"--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", runScriptFile.Name(), containerTemp),
+		// }, workspaceOpts...)
+		// for target, source := range filesToMount {
+		// 	args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", source.Name(), target))
+		// }
+
+		// for k, v := range env {
+		// 	args = append(args, "-e", k+"="+v)
+		// }
+
+		// args = append(args, "--entrypoint", shell)
+
+		// cmd := exec.CommandContext(ctx, "kubectl", args...)
+		// cmd.Args = append(cmd.Args, "--", digest, containerTemp)
+		// if dir := workspace.WorkDir(); dir != nil {
+		// 	cmd.Dir = *dir
+		// }
+
+		// var stdoutBuffer, stderrBuffer bytes.Buffer
+		// cmd.Stdout = io.MultiWriter(&stdoutBuffer, opts.logger.PrefixWriter("stdout"))
+		// cmd.Stderr = io.MultiWriter(&stderrBuffer, opts.logger.PrefixWriter("stderr"))
+
+		// opts.logger.Logf("[Step %d] run: %q, container: %q", i+1, step.Run, step.Container)
+		// opts.logger.Logf("[Step %d] full command: %q", i+1, strings.Join(cmd.Args, " "))
 
 		t0 := time.Now()
-		err = cmd.Run()
+		// err = cmd.Run()
 		elapsed := time.Since(t0).Round(time.Millisecond)
 		if err != nil {
 			opts.logger.Logf("[Step %d] took %s; error running Docker container: %+v", i+1, elapsed, err)
 
 			return execResult, stepFailedErr{
-				Err:         err,
-				Args:        cmd.Args,
+				Err: err,
+				// Args:        cmd.Args,
 				Run:         runScript.String(),
 				Container:   step.Container,
 				TmpFilename: containerTemp,
-				Stdout:      strings.TrimSpace(stdoutBuffer.String()),
-				Stderr:      strings.TrimSpace(stderrBuffer.String()),
+				// Stdout:      strings.TrimSpace(stdoutBuffer.String()),
+				// Stderr:      strings.TrimSpace(stderrBuffer.String()),
 			}
 		}
 
@@ -281,7 +382,7 @@ func runSteps(ctx context.Context, opts *executionOpts) (result executionResult,
 			return execResult, errors.Wrap(err, "getting changed files in step")
 		}
 
-		result := StepResult{files: changes, Stdout: &stdoutBuffer, Stderr: &stderrBuffer}
+		result := StepResult{files: changes /* , Stdout: &stdoutBuffer, Stderr: &stderrBuffer */}
 		stepContext.Step = result
 		results[i] = result
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/sourcegraph/sourcegraph/lib/output"
 	"github.com/sourcegraph/src-cli/internal/api"
 	"github.com/sourcegraph/src-cli/internal/batches/graphql"
 	"github.com/sourcegraph/src-cli/internal/batches/service"
@@ -48,8 +47,13 @@ Examples:
 			return err
 		}
 
-		out := output.NewOutput(flagSet.Output(), output.OutputOpts{Verbose: *verbose})
-		spec, _, err := batchParseSpec(out, fileFlag, svc)
+		f, err := batchOpenFileFlag(fileFlag)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		spec, _, err := svc.ParseBatchSpec(f)
 		if err != nil {
 			return err
 		}

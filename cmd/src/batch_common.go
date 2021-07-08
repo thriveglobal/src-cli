@@ -126,14 +126,6 @@ func newBatchExecuteFlags(flagSet *flag.FlagSet, cacheDir, tempDir string) *batc
 	return caf
 }
 
-func batchCreatePending(out *output.Output, message string) output.Pending {
-	return out.Pending(output.Line("", batchPendingColor, message))
-}
-
-func batchCompletePending(p output.Pending, message string) {
-	p.Complete(output.Line(batchSuccessEmoji, batchSuccessColor, message))
-}
-
 func batchDefaultCacheDir() string {
 	uc, err := os.UserCacheDir()
 	if err != nil {

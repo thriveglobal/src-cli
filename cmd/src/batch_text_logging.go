@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"time"
+
+	"github.com/sourcegraph/sourcegraph/lib/output"
+	"github.com/sourcegraph/src-cli/internal/batches/executor"
 )
 
 type batchesLogEvent struct {
@@ -34,4 +37,52 @@ func logOperationProgress(op, msg string) {
 func logEvent(e batchesLogEvent) {
 	e.Timestamp = time.Now().UTC().Truncate(time.Millisecond)
 	json.NewEncoder(os.Stdout).Encode(e)
+}
+
+type batchExecUI interface {
+	ParsingBatchSpec()
+	ParsingBatchSpecSuccess()
+
+	ResolvingNamespace()
+	ResolvingNamespaceSuccess(namespace string)
+
+	PreparingContainerImages()
+	PreparingContainerImagesProgress(percent float64)
+	PreparingContainerImagesSuccess()
+
+	DeterminingWorkspaceCreatorType()
+	DeterminingWorkspaceCreatorTypeSuccess(creatorType string)
+
+	ResolvingRepositories()
+	ResolvingRepositoriesDone(unsupported, ignored, repos int)
+
+	DeterminingWorkspaces()
+	DeterminingWorkspacesSuccess(num int)
+
+	CheckingCache()
+	CheckingCacheSuccess(cachedSpecsFound int, tasksToExecute int)
+
+	ExecutingTasks() func(ts []*executor.TaskStatus)
+	ExecutingTasksSkippingErrors(err error)
+	ExecutingTasksSuccess()
+
+	LogFilesKept(files []string)
+
+	UploadingChangesetSpecs(num int)
+	UploadingChangesetSpecsProgress(done int)
+	UploadingChangesetSpecsSuccess()
+
+	CreatingBatchSpec()
+	CreatingBatchSpecSuccess(url string)
+
+	ApplyingBatchSpec()
+	ApplyingBatchSpecSuccess(batchChangeURL string)
+}
+
+func batchCreatePending(out *output.Output, message string) output.Pending {
+	return out.Pending(output.Line("", batchPendingColor, message))
+}
+
+func batchCompletePending(p output.Pending, message string) {
+	p.Complete(output.Line(batchSuccessEmoji, batchSuccessColor, message))
 }

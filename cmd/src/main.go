@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -101,11 +100,11 @@ func readConfig() (*config, error) {
 	if testHomeDir != "" {
 		homeDir = testHomeDir
 	} else {
-		u, err := user.Current()
+		dir, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
 		}
-		homeDir = u.HomeDir
+		homeDir = dir
 	}
 
 	if !userSpecified {

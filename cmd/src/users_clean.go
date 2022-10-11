@@ -21,7 +21,7 @@ Examples:
 
 	$ src users clean -days 182
 	
-	$ src users clean -remove-admin -remove-never-active 
+	$ src users clean -remove-admin
 `
 
 	flagSet := flag.NewFlagSet("clean", flag.ExitOnError)
@@ -31,11 +31,10 @@ Examples:
 		fmt.Println(usage)
 	}
 	var (
-		daysToDelete       = flagSet.Int("days", 60, "Days threshold on which to remove users, must be 60 days or greater and defaults to this value ")
-		removeAdmin        = flagSet.Bool("remove-admin", false, "clean admin accounts")
-		removeNoLastActive = flagSet.Bool("remove-never-active", false, "removes users with null lastActive value")
-		skipConfirmation   = flagSet.Bool("force", false, "skips user confirmation step allowing programmatic use")
-		apiFlags           = api.NewFlags(flagSet)
+		daysToDelete     = flagSet.Int("days", 60, "Days threshold on which to remove users, must be 60 days or greater and defaults to this value ")
+		removeAdmin      = flagSet.Bool("remove-admin", false, "clean admin accounts")
+		skipConfirmation = flagSet.Bool("force", false, "skips user confirmation step allowing programmatic use")
+		apiFlags         = api.NewFlags(flagSet)
 	)
 
 	handler := func(args []string) error {
@@ -69,14 +68,19 @@ query {
 		}
 
 		usersQuery := `
-query Users() {
-	users() {
-		nodes {
-			...UserFields
-		}
-	}
+query InactiveUsers ($inactiveSince: DateTime!) {
+  users (inactiveSince: $inactiveSince) {
+    totalCount
+    nodes {
+      username
+      siteAdmin
+	  emails {
+		email
+	  }
+    }
+  }
 }
-` + userFragment
+`
 
 		// get users to delete
 		var usersResult struct {
@@ -84,37 +88,28 @@ query Users() {
 				Nodes []User
 			}
 		}
-		if ok, err := client.NewRequest(usersQuery, nil).Do(ctx, &usersResult); err != nil || !ok {
+		vars := map[string]interface{}{
+			"inactiveSince": computeInactiveSince(*daysToDelete).Format(time.RFC3339),
+		}
+		if ok, err := client.NewRequest(usersQuery, vars).Do(ctx, &usersResult); err != nil || !ok {
 			return err
 		}
 
-		usersToDelete := make([]UserToDelete, 0)
+		usersToDelete := make([]User, 0)
 		for _, user := range usersResult.Users.Nodes {
-			daysSinceLastUse, wasLastActive, err := computeDaysSinceLastUse(user)
-			if err != nil {
-				return err
-			}
 			// never remove user issuing command
 			if user.Username == currentUserResult.Data.CurrentUser.Username {
-				continue
-			}
-			if !wasLastActive && !*removeNoLastActive {
 				continue
 			}
 			if !*removeAdmin && user.SiteAdmin {
 				continue
 			}
-			if daysSinceLastUse <= *daysToDelete && wasLastActive {
-				continue
-			}
-			deleteUser := UserToDelete{user, daysSinceLastUse}
-
-			usersToDelete = append(usersToDelete, deleteUser)
+			usersToDelete = append(usersToDelete, user)
 		}
 
 		if *skipConfirmation {
 			for _, user := range usersToDelete {
-				if err := removeUser(user.User, client, ctx); err != nil {
+				if err := removeUser(user, client, ctx); err != nil {
 					return err
 				}
 			}
@@ -128,7 +123,7 @@ query Users() {
 		} else {
 			fmt.Println("REMOVING USERS")
 			for _, user := range usersToDelete {
-				if err := removeUser(user.User, client, ctx); err != nil {
+				if err := removeUser(user, client, ctx); err != nil {
 					return err
 				}
 			}
@@ -145,20 +140,9 @@ query Users() {
 	})
 }
 
-// computes days since last usage from current day and time and UsageStatistics.LastActiveTime, uses time.Parse
-func computeDaysSinceLastUse(user User) (timeDiff int, wasLastActive bool, _ error) {
-	// handle for null lastActiveTime returned from
-	if user.UsageStatistics.LastActiveTime == "" {
-		wasLastActive = false
-		return 0, wasLastActive, nil
-	}
-	timeLast, err := time.Parse(time.RFC3339, user.UsageStatistics.LastActiveTime)
-	if err != nil {
-		return 0, false, err
-	}
-	timeDiff = int(time.Since(timeLast).Hours() / 24)
-
-	return timeDiff, true, err
+// compute inactive since arg
+func computeInactiveSince(days int) time.Time {
+	return time.Now().AddDate(0, 0, -days)
 }
 
 // Issue graphQL api request to remove user
@@ -177,23 +161,18 @@ func removeUser(user User, client api.Client, ctx context.Context) error {
 	return nil
 }
 
-type UserToDelete struct {
-	User             User
-	DaysSinceLastUse int
-}
-
 // Verify user wants to remove users with table of users and a command prompt for [y/N]
-func confirmUserRemoval(usersToRemove []UserToDelete) (bool, error) {
+func confirmUserRemoval(usersToRemove []User) (bool, error) {
 	fmt.Printf("Users to remove from instance at %s\n", cfg.Endpoint)
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
-	t.AppendHeader(table.Row{"Username", "Email", "Days Since Last Active"})
+	t.AppendHeader(table.Row{"Username", "Email"})
 	for _, user := range usersToRemove {
-		if len(user.User.Emails) > 0 {
-			t.AppendRow([]interface{}{user.User.Username, user.User.Emails[0].Email, user.DaysSinceLastUse})
+		if len(user.Emails) > 0 {
+			t.AppendRow([]interface{}{user.Username, user.Emails[0].Email})
 			t.AppendSeparator()
 		} else {
-			t.AppendRow([]interface{}{user.User.Username, "", user.DaysSinceLastUse})
+			t.AppendRow([]interface{}{user.Username, ""})
 			t.AppendSeparator()
 		}
 	}

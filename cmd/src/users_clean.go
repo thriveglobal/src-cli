@@ -30,6 +30,7 @@ Examples:
 		flagSet.PrintDefaults()
 		fmt.Println(usage)
 	}
+	// TODO: add back in never active flag -- currently this will try to remove users that have never been active by default
 	var (
 		daysToDelete     = flagSet.Int("days", 60, "Days threshold on which to remove users, must be 60 days or greater and defaults to this value ")
 		removeAdmin      = flagSet.Bool("remove-admin", false, "clean admin accounts")
@@ -95,6 +96,7 @@ query InactiveUsers ($inactiveSince: DateTime!) {
 			return err
 		}
 
+		// doesn't handle for lastActive null users
 		usersToDelete := make([]User, 0)
 		for _, user := range usersResult.Users.Nodes {
 			// never remove user issuing command

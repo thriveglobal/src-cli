@@ -12,8 +12,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/mattn/go-isatty"
 
@@ -231,7 +232,7 @@ func batchOpenFileFlag(flag string) (*os.File, error) {
 			}
 		}
 		// https://github.com/golang/go/issues/24842
-		if err := syscall.SetNonblock(0, true); err != nil {
+		if err := unix.SetNonblock(0, true); err != nil {
 			panic(err)
 		}
 		stdin := os.NewFile(0, "stdin")

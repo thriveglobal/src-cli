@@ -485,11 +485,14 @@ func validateEbsCsiDrivers(addons *[]string) (result []validate.Result) {
 // EksVpc checks if a valid vpc available
 func EksVpc(ctx context.Context, config *Config) ([]validate.Result, error) {
 	var results []validate.Result
+
+    // if ec2Client fails to initialize, return failure
 	if config.ec2Client == nil {
 		results = append(results, validate.Result{
 			Status:  validate.Failure,
 			Message: "EKS: validate VPC failed",
 		})
+        return results, nil
 	}
 
 	inputs := &ec2.DescribeVpcsInput{}

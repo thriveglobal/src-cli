@@ -18,8 +18,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+    iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/sourcegraph/src-cli/internal/validate"
 
 	"github.com/sourcegraph/sourcegraph/lib/errors"
@@ -42,6 +44,7 @@ type Config struct {
 	eks        bool
 	eksClient  *eks.Client
 	ec2Client  *ec2.Client
+	iamClient  *iam.Client
 }
 
 func WithNamespace(namespace string) Option {
@@ -68,10 +71,16 @@ func Eks() Option {
 		log.Printf("error while loading config: %s", err)
 	}
 
+	iamConfig, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Printf("error while loading config: %s", err)
+	}
+
 	return func(config *Config) {
 		config.eks = true
 		config.eksClient = eks.NewFromConfig(eksConfig)
 		config.ec2Client = ec2.NewFromConfig(ec2Config)
+		config.iamClient = iam.NewFromConfig(iamConfig)
 	}
 }
 
@@ -124,6 +133,13 @@ func Validate(ctx context.Context, clientSet *kubernetes.Clientset, restConfig *
 			WaitMsg:    "EKS: validating vpc",
 			SuccessMsg: "EKS: vpc validated",
 			ErrMsg:     "EKS: validating vpc failed",
+		})
+        
+		validations = append(validations, validationGroup{
+			Validate:   EksIam,
+			WaitMsg:    "EKS: validating iam roles",
+			SuccessMsg: "EKS: iam roles validated",
+			ErrMsg:     "EKS: validating iam roles failed",
 		})
 	}
 
@@ -486,13 +502,13 @@ func validateEbsCsiDrivers(addons *[]string) (result []validate.Result) {
 func EksVpc(ctx context.Context, config *Config) ([]validate.Result, error) {
 	var results []validate.Result
 
-    // if ec2Client fails to initialize, return failure
+	// if ec2Client fails to initialize, return failure
 	if config.ec2Client == nil {
 		results = append(results, validate.Result{
 			Status:  validate.Failure,
 			Message: "EKS: validate VPC failed",
 		})
-        return results, nil
+		return results, nil
 	}
 
 	inputs := &ec2.DescribeVpcsInput{}
@@ -522,7 +538,7 @@ func EksVpc(ctx context.Context, config *Config) ([]validate.Result, error) {
 	return results, nil
 }
 
-func validateVpc(vpc *types.Vpc) (result []validate.Result) {
+func validateVpc(vpc *ec2Types.Vpc) (result []validate.Result) {
 	state := vpc.State
 
 	if state == "available" {
@@ -539,4 +555,58 @@ func validateVpc(vpc *types.Vpc) (result []validate.Result) {
 	})
 
 	return result
+}
+
+// EksIam checks if current IAM user has access to EKS
+func EksIam(ctx context.Context, config *Config) ([]validate.Result, error) {
+    var results []validate.Result
+    
+	if config.iamClient == nil {
+		results = append(results, validate.Result{
+			Status:  validate.Failure,
+			Message: "EKS: validate VPC failed",
+		})
+        
+		return results, nil
+	}
+    
+    eksNodeRole := "AmazonEKSNodeRole"
+    inputs := &iam.GetInstanceProfileInput{
+        InstanceProfileName: &eksNodeRole,
+    }
+    
+    outputs, err := config.iamClient.GetInstanceProfile(ctx, inputs)
+    
+    if err != nil {
+        results = append(results, validate.Result{
+            Status: validate.Failure,
+            Message: "EKS: validate IAM failed",
+        })
+        
+        return results, err
+    }
+
+    result := validateIam(outputs.InstanceProfile)
+    results = append(result, result...)
+    
+    return results, nil
+}
+
+func validateIam (profile *iamTypes.InstanceProfile) (result []validate.Result) {
+    fmt.Println("profile = ", &profile)
+    if &profile == nil {
+        result = append(result, validate.Result{
+            Status: validate.Failure,
+            Message: "EKS: validate iam roles failed",
+        })
+        
+        return result
+    }
+    
+    result = append(result, validate.Result{
+        Status: validate.Success,
+        Message: "EKS: iam roles validated",
+    })
+    
+    return result
 }

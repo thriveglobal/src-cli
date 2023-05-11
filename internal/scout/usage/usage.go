@@ -67,8 +67,13 @@ func UseSpy(spy bool) Option {
 	}
 }
 
-func K8s(ctx context.Context, clientSet *kubernetes.Clientset, metricsClient *metricsv.Clientset,
-	restConfig *rest.Config, opts ...Option) error {
+func K8s(
+	ctx context.Context,
+	clientSet *kubernetes.Clientset,
+	metricsClient *metricsv.Clientset,
+	restConfig *rest.Config,
+	opts ...Option,
+) error {
 	cfg := &Config{
 		namespace:     "default",
 		pod:           "",
@@ -136,10 +141,17 @@ func listResourceUsage(ctx context.Context, cfg *Config) error {
 
 func printResourceUsage(ctx context.Context, cfg *Config, w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "POD NAME\tCPU USAGE\tCPU USAGE (%)\tMEMORY USAGE\tMEMORY USAGE (%)")
+	fmt.Fprintln(tw, "POD NAME\tCPU Limits\tCPU USAGE (%)\tMemory Limits\tMEMORY USAGE (%)")
 
 	if cfg.pod != "" {
-		pod, err := cfg.k8sClient.CoreV1().Pods(cfg.namespace).Get(ctx, cfg.pod, metav1.GetOptions{})
+		pod, err := cfg.k8sClient.
+			CoreV1().
+			Pods(cfg.namespace).
+			Get(
+				ctx,
+				cfg.pod,
+				metav1.GetOptions{},
+			)
 		if err != nil {
 			errors.Wrap(err, "error getting pod: ")
 		}
@@ -170,7 +182,14 @@ func printResourceUsage(ctx context.Context, cfg *Config, w io.Writer) error {
 }
 
 func getPodUsage(ctx context.Context, cfg *Config, pod corev1.Pod) (PodUsageMetrics, error) {
-	rawMetrics, err := cfg.metricsClient.MetricsV1beta1().PodMetricses(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+	rawMetrics, err := cfg.metricsClient.
+		MetricsV1beta1().
+		PodMetricses(pod.Namespace).
+		Get(
+			ctx,
+			pod.Name,
+			metav1.GetOptions{},
+		)
 	if err != nil {
 		return PodUsageMetrics{}, errors.Wrap(err, "error getting pod metrics from metrics API: ")
 	}
@@ -188,14 +207,20 @@ func getPodUsage(ctx context.Context, cfg *Config, pod corev1.Pod) (PodUsageMetr
 			podMetrics.memUsage = container.Usage[corev1.ResourceMemory]
 		}
 	}
-    
-    podMetrics.cpuUsageFraction = float64(podMetrics.cpuUsage.MilliValue()) / float64(podMetrics.cpuLimits.MilliValue())
+
+    // TODO: Math is off somehow. Figure it out.
+	podMetrics.cpuUsageFraction = float64(podMetrics.cpuUsage.MilliValue()) / float64(podMetrics.cpuLimits.MilliValue())
 	podMetrics.memUsageFraction = float64(podMetrics.memUsage.Value()) / float64(podMetrics.memLimits.Value())
-    
+
 	return podMetrics, nil
 }
 
-func printPodUsage(ctx context.Context, podName string, podUsage PodUsageMetrics, tw *tabwriter.Writer) {
+func printPodUsage(
+	ctx context.Context,
+	podName string,
+	podUsage PodUsageMetrics,
+	tw *tabwriter.Writer,
+) {
 	fmt.Fprintf(tw, "%s\t%d\t%.2f%%\t%d\t%.2f%%\n",
 		podName,
 		podUsage.cpuUsage.Value(),

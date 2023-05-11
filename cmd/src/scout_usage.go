@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	"github.com/sourcegraph/src-cli/internal/scout/resource"
 	"github.com/sourcegraph/src-cli/internal/scout/usage"
@@ -47,8 +48,9 @@ func init() {
 	var (
 		kubeConfig *string
 		namespace  = flagSet.String("namespace", "", "(optional) specify the kubernetes namespace to use")
-        pod = flagSet.String("pod", "", "(optional) list usage for a specific pod")
-        container = flagSet.String("container", "", "(optional) list usage for a specific container")
+		pod        = flagSet.String("pod", "", "(optional) list usage for a specific pod")
+		container  = flagSet.String("container", "", "(optional) list usage for a specific container")
+		spy        = flagSet.Bool("spy", false, "(optional) watch cpu and mem usage in real time")
 		docker     = flagSet.Bool("docker", false, "(optional) using docker deployment")
 	)
 
@@ -77,18 +79,27 @@ func init() {
 			return errors.New(fmt.Sprintf("%v: failed to load kubernetes config", err))
 		}
 
+		metricsClient, err := metricsv.NewForConfig(config)
+		if err != nil {
+			return errors.New(fmt.Sprintf("%v: failed to load metrics config", err))
+		}
+
 		var options []usage.Option
 
 		if *namespace != "" {
 			options = append(options, usage.WithNamespace(*namespace))
 		}
-        
-        if *pod != "" {
+
+		if *pod != "" {
 			options = append(options, usage.WithPod(*pod))
-        }
-        
-        if *container != "" {
+		}
+
+		if *container != "" {
 			options = append(options, usage.WithContainer(*container))
+		}
+        
+        if *spy {
+            options = append(options, usage.UseSpy(*spy))
         }
 
 		if *docker {
@@ -100,7 +111,7 @@ func init() {
 			return resource.Docker(context.Background(), dockerClient)
 		}
 
-		return usage.K8s(context.Background(), clientSet, config, options...)
+		return usage.K8s(context.Background(), clientSet, metricsClient, config, options...)
 	}
 
 	scoutCommands = append(scoutCommands, &command{

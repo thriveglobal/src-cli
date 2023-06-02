@@ -34,7 +34,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: "src-cli-${{ steps.info.outputs.sha_short }}-linux-amd64"
-          path: |
-            "./src"
+          path: "src"
           if-no-files-found: error

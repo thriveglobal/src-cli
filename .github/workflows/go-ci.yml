@@ -21,7 +21,7 @@ jobs:
       - run: go test -race -v ./...
   go-build:
     runs-on: ubuntu-latest
-    if: "github.branch == 'jh/ci-artefact'"
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jh/ci-artifact'
     steps:
       - name: Build
         uses: actions/setup-go@v3

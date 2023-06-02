@@ -30,11 +30,11 @@ jobs:
         with:
           go-version: 1.19.x
       - run: CGO_ENABLED=0 go build ./cmd/src
+      - run: ls -al
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: "src-cli-${{ steps.info.outputs.sha_short }}-linux-amd64"
           path: |
-            "src"
-
-
+            "./src"
+          if-no-files-found: error

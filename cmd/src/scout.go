@@ -22,6 +22,7 @@ func init() {
         resource        print all known sourcegraph resources and their allocations
         usage           get CPU, memory and current disk usage
         advise          recommend lowering or raising resource allocations based on actual usage
+        spy             calculate usage averages over an period of time
 
     Use "src scout [command] -h" for more information about a command.
     `

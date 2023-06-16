@@ -74,7 +74,7 @@ func K8s(
 // or output to a file depending on the cfg.Output field.
 func Advise(ctx context.Context, cfg *scout.Config, pod v1.Pod) error {
 	var advice []scout.Advice
-	usageMetrics, err := getUsageMetrics(ctx, cfg, pod)
+	usageMetrics, err := GetUsageMetrics(ctx, cfg, pod)
 	if err != nil {
 		return errors.Wrap(err, "could not get usage metrics")
 	}
@@ -117,7 +117,7 @@ func Advise(ctx context.Context, cfg *scout.Config, pod v1.Pod) error {
 }
 
 // getUsageMetrics generates resource usage statistics for containers in a Kubernetes pod.
-func getUsageMetrics(ctx context.Context, cfg *scout.Config, pod v1.Pod) ([]scout.UsageStats, error) {
+func GetUsageMetrics(ctx context.Context, cfg *scout.Config, pod v1.Pod) ([]scout.UsageStats, error) {
 	var usages []scout.UsageStats
 	var usage scout.UsageStats
 	podMetrics, err := kube.GetPodMetrics(ctx, cfg, pod)

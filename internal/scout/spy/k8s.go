@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
+	"time"
 
 	"github.com/sourcegraph/src-cli/internal/scout"
 	"github.com/sourcegraph/src-cli/internal/scout/advise"
@@ -14,12 +16,6 @@ import (
 	"k8s.io/client-go/rest"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
-
-type PodMetrics map[string]PodUsage
-type PodUsage struct {
-	CpuUsage []float64
-	MemUsage []float64
-}
 
 func K8s(
 	ctx context.Context,
@@ -47,46 +43,63 @@ func K8s(
 		os.Exit(1)
 	}
 
-	metMap := initPodMetMap(pods)
-	for i := 0; i < 5; i++ {
-		pingPods(ctx, cfg, pods, metMap)
+	for _, pod := range pods {
+		go getAveragesOverTime(ctx, cfg, pod.Name, pods)
 	}
 
-	for k, v := range metMap {
-		fmt.Printf("%s: Memory:%.2f, CPU:%.2f", k, scout.GetAverage(v.CpuUsage), scout.GetAverage(v.MemUsage))
-	}
-
+	time.Sleep(500 * time.Second)
 	return nil
 }
 
-func pingPods(ctx context.Context, cfg *scout.Config, pods []corev1.Pod, metMap map[string]PodUsage) {
-	for _, pod := range pods {
-		updateMets(ctx, cfg, pod, metMap)
+func getAveragesOverTime(ctx context.Context, cfg *scout.Config, podName string, pods []corev1.Pod) error {
+	gitserverCpuCh := make(chan float64)
+	gitserverMemCh := make(chan float64)
+	cpus := []float64{}
+	mems := []float64{}
+	var cpuAvg float64
+	var memAvg float64
+
+	pod, err := kube.GetPod(podName, pods)
+	if err != nil {
+		return err
 	}
-}
 
-func updateMets(ctx context.Context, cfg *scout.Config, pod corev1.Pod, metMap map[string]PodUsage) {
-	met := metMap[pod.Name]
-
-	cpuUsage := getPodCPUUsage(ctx, cfg, pod)
-	memUsage := getPodMemoryUsage(ctx, cfg, pod)
-
-	met.CpuUsage = append(met.CpuUsage, cpuUsage)
-	met.MemUsage = append(met.MemUsage, memUsage)
-
-	metMap[pod.Name] = met
-}
-
-func initPodMetMap(pods []corev1.Pod) map[string]PodUsage {
-	metMap := make(map[string]PodUsage)
-	for _, pod := range pods {
-		podUsage := PodUsage{
-			CpuUsage: []float64{},
-			MemUsage: []float64{},
+	go func() {
+		for {
+			gitserverCpuCh <- getPodCPUUsage(ctx, cfg, pod)
+			time.Sleep(8 * time.Second)
 		}
-		metMap[pod.Name] = podUsage
-	}
-	return metMap
+	}()
+
+	go func() {
+		for {
+			gitserverMemCh <- getPodMemoryUsage(ctx, cfg, pod)
+			time.Sleep(8 * time.Second)
+		}
+	}()
+
+	go func() {
+		for cpu := range gitserverCpuCh {
+			if reflect.DeepEqual(cpus, []float64{}) || cpus[len(cpus)-1] != cpu {
+				cpus = append(cpus, cpu)
+				cpuAvg = scout.GetAverage(cpus)
+				fmt.Printf("%s: cpu average: %v\n", podName, cpuAvg)
+			}
+		}
+	}()
+
+	go func() {
+		for mem := range gitserverMemCh {
+			if reflect.DeepEqual(mems, []float64{}) || mems[len(mems)-1] != mem {
+				mems = append(mems, mem)
+				memAvg = scout.GetAverage(mems)
+				fmt.Printf("%s: mem average: %v\n", podName, memAvg)
+			}
+		}
+	}()
+
+	time.Sleep(120 * time.Second)
+	return nil
 }
 
 func getPodCPUUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) float64 {

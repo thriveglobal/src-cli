@@ -2,7 +2,6 @@ package spy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -120,7 +119,7 @@ func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod,
 				time.Sleep(2 * time.Second)
 				os.Exit(0)
 			default:
-				cpuCh <- getPodCPUUsage(ctx, cfg, pod)
+				cpuCh <- getPodUsage(ctx, cfg, pod, scout.CPU)
 				time.Sleep(15 * time.Second)
 			}
 		}
@@ -134,7 +133,7 @@ func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod,
 				time.Sleep(2 * time.Second)
 				os.Exit(0)
 			default:
-				memCh <- getPodMemoryUsage(ctx, cfg, pod)
+				memCh <- getPodUsage(ctx, cfg, pod, scout.MEMORY)
 				time.Sleep(15 * time.Second)
 			}
 		}
@@ -161,8 +160,7 @@ func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod,
 	return nil
 }
 
-func getPodCPUUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) float64 {
-	var cpuUsage float64
+func getPodUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod, kind string) (usage float64) {
 	usageMetrics, err := advise.GetUsageMetrics(ctx, cfg, pod)
 	if err != nil {
 		fmt.Printf("%s: failed to get usage metrics: %s\n", pod.Name, err)
@@ -170,32 +168,15 @@ func getPodCPUUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) floa
 	}
 
 	for _, container := range usageMetrics {
-		cpuUsage += container.CpuUsage
+		if kind == scout.CPU {
+			usage += container.CpuUsage
+		} else if kind == scout.MEMORY {
+			usage += container.MemoryUsage
+		} else {
+			fmt.Printf("%s is an invalid argument for 'kind', use '%s' or '%s'", kind, scout.MEMORY, scout.CPU)
+			os.Exit(1)
+		}
 	}
 
-	return cpuUsage
-}
-
-func getPodMemoryUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) float64 {
-	var memUsage float64
-	usageMetrics, err := advise.GetUsageMetrics(ctx, cfg, pod)
-	if err != nil {
-		fmt.Printf("%s: failed to get usage metrics: %s\n", pod.Name, err)
-		os.Exit(1)
-	}
-
-	for _, container := range usageMetrics {
-		memUsage += container.MemoryUsage
-	}
-
-	return memUsage
-}
-
-func PrettyPrint(v interface{}) (err error) {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err == nil {
-		fmt.Println(string(b))
-		os.Exit(1)
-	}
 	return
 }

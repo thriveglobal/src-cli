@@ -9,4 +9,6 @@ const (
 	HEALTHY                       = "HEALTHY"
 	WARNING                       = "WARNING"
 	DANGER                        = "DANGER"
+	MEMORY                        = "memory"
+	CPU                           = "cpu"
 )

@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"reflect"
+	"syscall"
 	"time"
 
+	"github.com/olekukonko/tablewriter"
+	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/sourcegraph/src-cli/internal/scout"
 	"github.com/sourcegraph/src-cli/internal/scout/advise"
 	"github.com/sourcegraph/src-cli/internal/scout/kube"
@@ -16,6 +20,12 @@ import (
 	"k8s.io/client-go/rest"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
+
+type ResourceAverages struct {
+	PodName         string
+	CpuAverageUsage float64
+	MemAverageUsage float64
+}
 
 func K8s(
 	ctx context.Context,
@@ -33,6 +43,15 @@ func K8s(
 		MetricsClient: metricsClient,
 	}
 
+	// @TODO rewrite this to include windows file path
+	filePath := "/tmp/resource-averages.txt"
+	f, err := os.Create(filePath)
+	defer f.Close()
+
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -43,62 +62,102 @@ func K8s(
 		os.Exit(1)
 	}
 
+	t := tablewriter.NewWriter(f)
+	t.SetHeader([]string{"Pod", "CPU AVG%", "MEM AVG%"})
+
+	raCh := make(chan ResourceAverages)
 	for _, pod := range pods {
-		go getAveragesOverTime(ctx, cfg, pod.Name, pods)
+		go getAveragesOverTime(ctx, cfg, pod, raCh)
 	}
 
-	time.Sleep(500 * time.Second)
+	i := 1
+	for ra := range raCh {
+		t.Append([]string{
+			ra.PodName,
+			fmt.Sprintf("%.2f%%", ra.CpuAverageUsage),
+			fmt.Sprintf("%.2f%%", ra.MemAverageUsage),
+		})
+
+		if i == len(pods) {
+			t.Render()
+		} else {
+			i++
+		}
+	}
+
 	return nil
 }
 
-func getAveragesOverTime(ctx context.Context, cfg *scout.Config, podName string, pods []corev1.Pod) error {
-	gitserverCpuCh := make(chan float64)
-	gitserverMemCh := make(chan float64)
+func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod, ch chan ResourceAverages) error {
+	cpuCh := make(chan float64)
+	memCh := make(chan float64)
 	cpus := []float64{}
 	mems := []float64{}
 	var cpuAvg float64
 	var memAvg float64
+	var ra ResourceAverages
 
-	pod, err := kube.GetPod(podName, pods)
-	if err != nil {
-		return err
-	}
+	ctx, cancel := context.WithCancel(ctx)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		for {
-			gitserverCpuCh <- getPodCPUUsage(ctx, cfg, pod)
-			time.Sleep(8 * time.Second)
+		select {
+		case <-sigCh:
+			ra.PodName = pod.Name
+			ra.CpuAverageUsage = cpuAvg
+			ra.MemAverageUsage = memAvg
+			ch <- ra
+			cancel()
 		}
 	}()
 
-	go func() {
+	go func(ctx context.Context) {
 		for {
-			gitserverMemCh <- getPodMemoryUsage(ctx, cfg, pod)
-			time.Sleep(8 * time.Second)
+			select {
+			case <-ctx.Done():
+				fmt.Printf("cleaning up %s...\n", pod.Name)
+				time.Sleep(2 * time.Second)
+				os.Exit(0)
+			default:
+				cpuCh <- getPodCPUUsage(ctx, cfg, pod)
+				time.Sleep(15 * time.Second)
+			}
 		}
-	}()
+	}(ctx)
+
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				fmt.Printf("cleaning up %s...\n", pod.Name)
+				time.Sleep(2 * time.Second)
+				os.Exit(0)
+			default:
+				memCh <- getPodMemoryUsage(ctx, cfg, pod)
+				time.Sleep(15 * time.Second)
+			}
+		}
+	}(ctx)
 
 	go func() {
-		for cpu := range gitserverCpuCh {
+		for cpu := range cpuCh {
 			if reflect.DeepEqual(cpus, []float64{}) || cpus[len(cpus)-1] != cpu {
 				cpus = append(cpus, cpu)
 				cpuAvg = scout.GetAverage(cpus)
-				fmt.Printf("%s: cpu average: %v\n", podName, cpuAvg)
 			}
 		}
 	}()
 
 	go func() {
-		for mem := range gitserverMemCh {
+		for mem := range memCh {
 			if reflect.DeepEqual(mems, []float64{}) || mems[len(mems)-1] != mem {
 				mems = append(mems, mem)
 				memAvg = scout.GetAverage(mems)
-				fmt.Printf("%s: mem average: %v\n", podName, memAvg)
 			}
 		}
 	}()
 
-	time.Sleep(120 * time.Second)
 	return nil
 }
 
@@ -106,7 +165,7 @@ func getPodCPUUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) floa
 	var cpuUsage float64
 	usageMetrics, err := advise.GetUsageMetrics(ctx, cfg, pod)
 	if err != nil {
-		fmt.Println("could not get usage metrics")
+		fmt.Printf("%s: failed to get usage metrics: %s\n", pod.Name, err)
 		os.Exit(1)
 	}
 
@@ -121,7 +180,7 @@ func getPodMemoryUsage(ctx context.Context, cfg *scout.Config, pod corev1.Pod) f
 	var memUsage float64
 	usageMetrics, err := advise.GetUsageMetrics(ctx, cfg, pod)
 	if err != nil {
-		fmt.Println("could not get usage metrics")
+		fmt.Printf("%s: failed to get usage metrics: %s\n", pod.Name, err)
 		os.Exit(1)
 	}
 
@@ -136,6 +195,7 @@ func PrettyPrint(v interface{}) (err error) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err == nil {
 		fmt.Println(string(b))
+		os.Exit(1)
 	}
 	return
 }

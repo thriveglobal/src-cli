@@ -42,15 +42,6 @@ func K8s(
 		MetricsClient: metricsClient,
 	}
 
-	// @TODO rewrite this to include windows file path
-	filePath := "/tmp/resource-averages.txt"
-	f, err := os.Create(filePath)
-	defer f.Close()
-
-	if err != nil {
-		return errors.Wrap(err, "failed to create file")
-	}
-
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -61,29 +52,44 @@ func K8s(
 		os.Exit(1)
 	}
 
-	t := tablewriter.NewWriter(f)
-	t.SetHeader([]string{"Pod", "CPU AVG%", "MEM AVG%"})
-
 	raCh := make(chan ResourceAverages)
 	for _, pod := range pods {
 		go getAveragesOverTime(ctx, cfg, pod, raCh)
 	}
 
+	err = outputTableToFile(raCh, len(pods))
+	if err != nil {
+		return errors.Wrap(err, "failed to output table to file")
+	}
+
+	return nil
+}
+
+func outputTableToFile(ch chan ResourceAverages, numOfRows int) error {
+	f, err := os.Create("/tmp/resource-averages.txt")
+	defer f.Close()
+
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+
+	t := tablewriter.NewWriter(f)
+	t.SetHeader([]string{"Pod", "CPU AVG%", "MEM AVG%"})
+
 	i := 1
-	for ra := range raCh {
+	for ra := range ch {
 		t.Append([]string{
 			ra.PodName,
 			fmt.Sprintf("%.2f%%", ra.CpuAverageUsage),
 			fmt.Sprintf("%.2f%%", ra.MemAverageUsage),
 		})
 
-		if i == len(pods) {
+		if i == numOfRows {
 			t.Render()
 		} else {
 			i++
 		}
 	}
-
 	return nil
 }
 

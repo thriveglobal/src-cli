@@ -8,7 +8,7 @@ import (
 	"github.com/sourcegraph/src-cli/internal/scout"
 )
 
-func TestGetPodCPUUsage(t *testing.T) {
+func TestGetPodUsage(t *testing.T) {
 	cases := []struct {
 		name         string
 		usageMetrics []scout.UsageStats
@@ -34,6 +34,18 @@ func TestGetPodCPUUsage(t *testing.T) {
 		},
 		{
 			name: "return correct cpu usage for pod with single container",
+			usageMetrics: []scout.UsageStats{
+				{
+					ContainerName: "container1",
+					CpuUsage:      2.5,
+					MemoryUsage:   45.0,
+				},
+			},
+			want: 2.5,
+			kind: scout.CPU,
+		},
+		{
+			name: "return correct memory usage for pod with single container",
 			usageMetrics: []scout.UsageStats{
 				{
 					ContainerName: "container1",

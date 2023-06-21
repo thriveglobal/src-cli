@@ -2,11 +2,28 @@ package spy
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/olekukonko/tablewriter"
+	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/sourcegraph/src-cli/internal/scout"
 )
+
+// MockResourceAverages represents a mock implementation of the ResourceAverages struct.
+type MockResourceAverages struct {
+	PodName         string
+	CpuAverageUsage float64
+	MemAverageUsage float64
+}
+
+// MockChannel is a mock implementation of the channel that receives ResourceAverages.
+type MockChannel struct {
+	Data     []MockResourceAverages
+	Position int
+}
 
 func TestGetPodUsage(t *testing.T) {
 	cases := []struct {
@@ -86,6 +103,59 @@ func TestGetPodUsage(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("got %.2f, want %.2f", got, tc.want)
 		}
+	}
+}
+
+func TestOutputTableToFile(t *testing.T) {
+	data := []ResourceAverages{
+		{
+			PodName:         "Pod 1",
+			CpuAverageUsage: 50.0,
+			MemAverageUsage: 30.0,
+		},
+		{
+			PodName:         "Pod 2",
+			CpuAverageUsage: 60.5,
+			MemAverageUsage: 40.2,
+		},
+	}
+
+	ch := make(chan ResourceAverages, 2)
+	for _, d := range data {
+		go func(d ResourceAverages) {
+			fmt.Println(d)
+			ch <- d
+		}(d)
+	}
+
+	go func(ch chan ResourceAverages) {
+		err := outputTableToFile(ch, 2)
+		if err != nil {
+			t.Errorf("Expected no error, but got: %v", err)
+		}
+	}(ch)
+
+	_, err := os.Stat("/tmp/resource-averages.txt")
+	if os.IsNotExist(err) {
+		t.Error("Expected file to be created, but it does not exist")
+	}
+
+	fileContent, err := ioutil.ReadFile("/tmp/resource-averages.txt")
+	fmt.Println(string(fileContent))
+	if err != nil {
+		t.Errorf("Failed to read file: %v", err)
+	}
+
+	expectedContent := `+-------+----------+----------+
+|  POD  | CPU AVG% | MEM AVG% |
++-------+----------+----------+
+| Pod 1 | 50.00%   | 30.00%   |
+| Pod 2 | 60.50%   | 40.20%   |
++-------+----------+----------+
+`
+	if strings.TrimSpace(string(fileContent)) != strings.TrimSpace(expectedContent) {
+		t.Errorf("File content doesn't match the expected content:\n\nExpected:\n%s\n\nActual:\n%s",
+			expectedContent, string(fileContent))
 	}
 }
 

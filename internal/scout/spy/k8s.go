@@ -65,34 +65,6 @@ func K8s(
 	return nil
 }
 
-func outputTableToFile(ch chan ResourceAverages, numOfRows int) error {
-	f, err := os.Create("/tmp/resource-averages.txt")
-	defer f.Close()
-
-	if err != nil {
-		return errors.Wrap(err, "failed to create file")
-	}
-
-	t := tablewriter.NewWriter(f)
-	t.SetHeader([]string{"Pod", "CPU AVG%", "MEM AVG%"})
-
-	i := 1
-	for ra := range ch {
-		t.Append([]string{
-			ra.PodName,
-			fmt.Sprintf("%.2f%%", ra.CpuAverageUsage),
-			fmt.Sprintf("%.2f%%", ra.MemAverageUsage),
-		})
-
-		if i == numOfRows {
-			t.Render()
-		} else {
-			i++
-		}
-	}
-	return nil
-}
-
 func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod, ch chan ResourceAverages) error {
 	cpuCh := make(chan float64)
 	memCh := make(chan float64)
@@ -163,6 +135,33 @@ func getAveragesOverTime(ctx context.Context, cfg *scout.Config, pod corev1.Pod,
 		}
 	}()
 
+	return nil
+}
+
+func outputTableToFile(ch chan ResourceAverages, numOfRows int) error {
+	f, err := os.Create("/tmp/resource-averages.txt")
+	if err != nil {
+		return errors.Wrap(err, "failed to create file")
+	}
+	defer f.Close()
+
+	t := tablewriter.NewWriter(f)
+	t.SetHeader([]string{"Pod", "CPU AVG%", "MEM AVG%"})
+
+	i := 1
+	for ra := range ch {
+		t.Append([]string{
+			ra.PodName,
+			fmt.Sprintf("%.2f%%", ra.CpuAverageUsage),
+			fmt.Sprintf("%.2f%%", ra.MemAverageUsage),
+		})
+
+		if i == numOfRows {
+			t.Render()
+		} else {
+			i++
+		}
+	}
 	return nil
 }
 

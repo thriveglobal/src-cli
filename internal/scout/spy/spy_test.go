@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/sourcegraph/src-cli/internal/scout"
 )
 
@@ -159,6 +157,7 @@ func TestOutputTableToFile(t *testing.T) {
 	}
 }
 
+// figure out how to write the test the actual function instead of the mock function
 func mock_getPodUsage(containers []scout.UsageStats, kind string) (usage float64) {
 	for _, container := range containers {
 		if kind == scout.CPU {

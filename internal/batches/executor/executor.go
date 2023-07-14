@@ -73,6 +73,7 @@ type NewExecutorOpts struct {
 	BinaryDiffs bool
 }
 
+// Foobar
 type executor struct {
 	opts NewExecutorOpts
 

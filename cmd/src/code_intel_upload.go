@@ -15,9 +15,7 @@ import (
 
 	"github.com/pkg/browser"
 
-	"github.com/sourcegraph/sourcegraph/lib/accesstoken"
 	"github.com/sourcegraph/sourcegraph/lib/codeintel/upload"
-	"github.com/sourcegraph/sourcegraph/lib/errors"
 	"github.com/sourcegraph/sourcegraph/lib/output"
 
 	"github.com/sourcegraph/src-cli/internal/api"
@@ -88,7 +86,7 @@ func handleCodeIntelUpload(args []string) error {
 		}
 	}
 	if err != nil {
-		return handleUploadError(cfg.AccessToken, err)
+		return handleUploadError(nil, err)
 	}
 
 	client := api.NewClient(api.ClientOpts{
@@ -96,10 +94,9 @@ func handleCodeIntelUpload(args []string) error {
 		Flags: codeintelUploadFlags.apiFlags,
 	})
 
-	uploadOptions := codeintelUploadOptions(out, isSCIPAvailable)
-	uploadID, err := upload.UploadIndex(ctx, codeintelUploadFlags.file, client, uploadOptions)
+	uploadID, err := upload.UploadIndex(ctx, codeintelUploadFlags.file, client, codeintelUploadOptions(out, isSCIPAvailable))
 	if err != nil {
-		return handleUploadError(uploadOptions.SourcegraphInstanceOptions.AccessToken, err)
+		return handleUploadError(out, err)
 	}
 
 	uploadURL, err := makeCodeIntelUploadURL(uploadID)
@@ -236,9 +233,9 @@ func (e errorWithHint) Error() string {
 // given output object is nil then the error will be written to standard out.
 //
 // This method returns the error that should be passed back up to the runner.
-func handleUploadError(accessToken string, err error) error {
-	if errors.Is(err, upload.ErrUnauthorized) {
-		err = attachHintsForAuthorizationError(accessToken, err)
+func handleUploadError(out *output.Output, err error) error {
+	if err == upload.ErrUnauthorized {
+		err = filterLSIFUnauthorizedError(out, err)
 	}
 
 	if codeintelUploadFlags.ignoreUploadFailures {
@@ -250,25 +247,8 @@ func handleUploadError(accessToken string, err error) error {
 	return err
 }
 
-func attachHintsForAuthorizationError(accessToken string, err error) error {
+func filterLSIFUnauthorizedError(out *output.Output, err error) error {
 	var actionableHints []string
-
-	likelyTokenError := accessToken == ""
-	if _, err = accesstoken.ParsePersonalAccessToken(accessToken); accessToken != "" && err != nil {
-		likelyTokenError = true
-		actionableHints = append(actionableHints,
-			"However, the provided access token does not match expected format; was it truncated?",
-			"Typically the access token looks like sgp_<40 hex chars> or sgp_<instance-id>_<40 hex chars>.")
-	}
-
-	if likelyTokenError {
-		return errorWithHint{err: err, hint: strings.Join(mergeStringSlices(
-			[]string{"A Sourcegraph access token must be provided via SRC_ACCESS_TOKEN for uploading SCIP/LSIF data."},
-			actionableHints,
-			[]string{"For more details, see https://sourcegraph.com/docs/cli/how-tos/creating_an_access_token."},
-		), "\n")}
-	}
-
 	needsGitHubToken := strings.HasPrefix(codeintelUploadFlags.repo, "github.com")
 	needsGitLabToken := strings.HasPrefix(codeintelUploadFlags.repo, "gitlab.com")
 

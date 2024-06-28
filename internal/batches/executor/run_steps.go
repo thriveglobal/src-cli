@@ -328,7 +328,7 @@ func executeSingleStep(
 		"--init",
 		"--cidfile", cidFile,
 		"--workdir", scriptWorkDir,
-		"--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", runScriptFile, containerTemp),
+		"--mount", fmt.Sprintf("type=bind,source=%s,target=%s", runScriptFile, containerTemp),
 	}, workspaceOpts...)
 
 	if opts.ForceRoot {
@@ -336,7 +336,7 @@ func executeSingleStep(
 	}
 
 	for target, source := range filesToMount {
-		args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", source.Name(), target))
+		args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s", source.Name(), target))
 	}
 
 	// Mount any paths on the local system to the docker container. The paths have already been validated during parsing.
@@ -345,7 +345,7 @@ func executeSingleStep(
 		if err != nil {
 			return bytes.Buffer{}, bytes.Buffer{}, err
 		}
-		args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s,ro", workspaceFilePath, mount.Mountpoint))
+		args = append(args, "--mount", fmt.Sprintf("type=bind,source=%s,target=%s", workspaceFilePath, mount.Mountpoint))
 	}
 
 	for k, v := range env {

@@ -114,7 +114,7 @@ Examples:
 		}
 		if hasWorkspaceFiles {
 			ui.UploadingWorkspaceFiles()
-			if err = svc.UploadBatchSpecWorkspaceFiles(ctx, batchSpecDir, batchSpecID, spec.Steps); err != nil {
+			if err = svc.UploadBatchSpecWorkspaceFiles(ctx, batchSpecDir, batchSpecID, spec.Steps, []string{}); err != nil {
 				return err
 			}
 			ui.UploadingWorkspaceFilesSuccess()

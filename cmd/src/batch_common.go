@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/sourcegraph/sourcegraph/lib/batches/execution/cache"
 	"io"
 	"os"
 	"os/exec"
@@ -80,17 +81,19 @@ func newBatchExecutionFlags(flagSet *flag.FlagSet) *batchExecutionFlags {
 type batchExecuteFlags struct {
 	*batchExecutionFlags
 
-	apply         bool
-	cacheDir      string
-	tempDir       string
-	file          string
-	keepLogs      bool
-	parallelism   int
-	timeout       time.Duration
-	workspace     string
-	cleanArchives bool
-	skipErrors    bool
-	runAsRoot     bool
+	apply                    bool
+	cacheDir                 string
+	disableCache             bool
+	tempDir                  string
+	file                     string
+	keepLogs                 bool
+	parallelism              int
+	timeout                  time.Duration
+	workspace                string
+	cleanArchives            bool
+	skipErrors               bool
+	runAsRoot                bool
+	mountsExcludedFromUpload string
 
 	// EXPERIMENTAL
 	textOnly bool
@@ -100,6 +103,8 @@ func newBatchExecuteFlags(flagSet *flag.FlagSet, cacheDir, tempDir string) *batc
 	caf := &batchExecuteFlags{
 		batchExecutionFlags: newBatchExecutionFlags(flagSet),
 	}
+	flagSet.StringVar(&caf.mountsExcludedFromUpload, "mounts-excluded-from-upload", "", "Mounts to exclude from upload")
+	flagSet.BoolVar(&caf.disableCache, "disable-cache", true, "Disable cache")
 
 	flagSet.BoolVar(
 		&caf.textOnly, "text-only", false,
@@ -412,6 +417,14 @@ func executeBatchSpec(ctx context.Context, opts executeBatchSpecOpts) (err error
 
 	archiveRegistry := repozip.NewArchiveRegistry(opts.client, opts.flags.cacheDir, opts.flags.cleanArchives)
 	logManager := log.NewDiskManager(opts.flags.tempDir, opts.flags.keepLogs)
+	var (
+		coordCache cache.Cache
+	)
+	if opts.flags.disableCache {
+		coordCache = executor.ExecutionNoOpCache{}
+	} else {
+		coordCache = executor.NewDiskCache(opts.flags.cacheDir)
+	}
 	coord := executor.NewCoordinator(
 		executor.NewCoordinatorOpts{
 			ExecOpts: executor.NewExecutorOpts{
@@ -428,7 +441,7 @@ func executeBatchSpec(ctx context.Context, opts executeBatchSpecOpts) (err error
 				BinaryDiffs:         ffs.BinaryDiffs,
 			},
 			Logger:      logManager,
-			Cache:       executor.NewDiskCache(opts.flags.cacheDir),
+			Cache:       coordCache,
 			BinaryDiffs: ffs.BinaryDiffs,
 			GlobalEnv:   os.Environ(),
 		},
@@ -448,9 +461,11 @@ func executeBatchSpec(ctx context.Context, opts executeBatchSpecOpts) (err error
 		uncachedTasks []*executor.Task
 	)
 	if opts.flags.clearCache {
+		fmt.Printf("Starting clear caches")
 		if err := coord.ClearCache(ctx, tasks); err != nil {
 			return err
 		}
+		fmt.Printf("cleared caches")
 		uncachedTasks = tasks
 	} else {
 		// Check the cache for completely cached executions.
@@ -459,6 +474,7 @@ func executeBatchSpec(ctx context.Context, opts executeBatchSpecOpts) (err error
 			return err
 		}
 	}
+	fmt.Printf("success")
 	execUI.CheckingCacheSuccess(len(specs), len(uncachedTasks))
 
 	taskExecUI := execUI.ExecutingTasks(*verbose, parallelism)
@@ -535,7 +551,14 @@ func executeBatchSpec(ctx context.Context, opts executeBatchSpecOpts) (err error
 	}
 	if hasWorkspaceFiles {
 		execUI.UploadingWorkspaceFiles()
-		if err := svc.UploadBatchSpecWorkspaceFiles(ctx, batchSpecDir, string(id), batchSpec.Steps); err != nil {
+		var excludedMounts []string
+		for _, each := range strings.Split(opts.flags.mountsExcludedFromUpload, ",") {
+			if len(each) != 0 {
+				excludedMounts = append(excludedMounts, each)
+			}
+		}
+
+		if err := svc.UploadBatchSpecWorkspaceFiles(ctx, batchSpecDir, string(id), batchSpec.Steps, excludedMounts); err != nil {
 			// Since failing to upload workspace files should not stop processing, just warn
 			execUI.UploadingWorkspaceFilesWarning(errors.Wrap(err, "uploading workspace files"))
 		} else {

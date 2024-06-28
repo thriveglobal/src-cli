@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/sourcegraph/sourcegraph/lib/errors"
 
@@ -66,14 +67,20 @@ func (c *Coordinator) CheckCache(ctx context.Context, batchSpec *batcheslib.Batc
 }
 
 func (c *Coordinator) ClearCache(ctx context.Context, tasks []*Task) error {
+	fmt.Printf("tasks %d\n", len(tasks))
 	for _, task := range tasks {
+		fmt.Printf("task steps %d\n", len(task.Steps))
 		for i := len(task.Steps) - 1; i > -1; i-- {
 			key := task.CacheKey(c.opts.GlobalEnv, c.opts.ExecOpts.WorkingDirectory, i)
+			fmt.Printf("task cache key: %s\n", key.Slug())
+			fmt.Printf("placeholder\n")
 			if err := c.opts.Cache.Clear(ctx, key); err != nil {
 				return errors.Wrapf(err, "clearing cache for step %d in %q", i, task.Repository.Name)
 			}
+			fmt.Printf("task cache key %s clear done\n", key.Slug())
 		}
 	}
+	fmt.Printf("Clear Cache done\n")
 	return nil
 }
 

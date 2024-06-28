@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sourcegraph/sourcegraph/lib/batches"
@@ -103,17 +104,23 @@ func (svc *Service) CreateBatchSpecFromRaw(
 }
 
 // UploadBatchSpecWorkspaceFiles uploads workspace files to the server.
-func (svc *Service) UploadBatchSpecWorkspaceFiles(ctx context.Context, workingDir string, batchSpecID string, steps []batches.Step) error {
+func (svc *Service) UploadBatchSpecWorkspaceFiles(ctx context.Context, workingDir string, batchSpecID string, steps []batches.Step, excludedMounts []string) error {
 	filePaths := make(map[string]bool)
 	for _, step := range steps {
 		for _, mount := range step.Mount {
+			fmt.Println("Checking mount %s", mount.Path)
+			if slices.Contains(excludedMounts, mount.Path) {
+				fmt.Println("Mount %s is excluded", mount.Path)
+				continue
+			}
+
 			paths, err := getFilePaths(workingDir, mount.Path)
 			if err != nil {
 				return err
 			}
 			// Dedupe any files.
 			for _, path := range paths {
-				if !filePaths[path] {
+				if !strings.Contains(path, "gradle-home") && !filePaths[path] {
 					filePaths[path] = true
 				}
 			}
@@ -121,9 +128,11 @@ func (svc *Service) UploadBatchSpecWorkspaceFiles(ctx context.Context, workingDi
 	}
 
 	for filePath := range filePaths {
+		fmt.Println("uploading %s", filePaths)
 		if err := svc.uploadFile(ctx, workingDir, filePath, batchSpecID); err != nil {
 			return err
 		}
+		fmt.Println("uploaded %s", filePaths)
 	}
 	return nil
 }
